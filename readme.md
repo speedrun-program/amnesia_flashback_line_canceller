@@ -1,12 +1,7 @@
+
 https://github.com/speedrun-program/amnesia_load_screen_tool
 
 # INSTRUCTIONS
-
-
-SETUP:
-- copy files_and_delays.txt to the Amnesia executable's folder.
-  it should be encoded as UTF-16 LE (check in the lower right corner in notepad).
-
 
 how to make the game skip flashbacks in load screens:
 - **CHECK IF THE MODERATORS ALLOW THIS.**
@@ -25,7 +20,8 @@ how to turn off the load delays for maps in quitouts which you quitout in:
 
 how to adjust delays or add maps in files_and_delays.txt:
 - between the slashes, put the map name at the start, the delay in milliseconds in the middle, and a dash at the end.
-  e.g.: 123_some_amnesia_map.hps / 1234 / -
+  e.g.: 12_storage.hps / 1575 / -
+  this will give the loads for the Storage map a delay of 1575 milliseconds.
 - remember to delay the .hps files instead of .map files or .map_cache files, except for menu_bg.map.
   The reason to do this is because .hps files don't trigger delays during quickloads or when opening
   a map folder from the debug menu.
@@ -50,4 +46,3 @@ EXAMPLE:
 game_map1.hps will be delayed 1 second on its 1st load and 2.5 seconds on its 2nd load.
 game_map2.hps will be delay 2 seconds, 3 seconds, and 4 seconds in a cycle.
 game_map3.hps will restart the other maps' sequences whenever it's loaded.
-
