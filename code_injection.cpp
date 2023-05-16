@@ -512,6 +512,7 @@ bool injectSkipInstructions(SavedInstructions& si, ProcessHelper& ph, uint32_t e
         0x5f,                                     // 0056 // pop edi // stack depth +4
         0x5b,                                     // 0057 // pop ebx // stack depth +0
         0xe9, 0x00, 0x00, 0x00, 0x00,             // 0058 // jmp to before calling cSoundHandler::FadeOutAll, 0048baad
+        0x90,
     };
 
     unsigned char jmpInstruction[sizeof(si.beforeFadeOutAllBytes)] = { 0xe9, 0x00, 0x00, 0x00, 0x00, 0x90, 0x90 };
@@ -597,22 +598,23 @@ bool injectWaitInstructions(SavedInstructions& si, ProcessHelper& ph, uint32_t e
 {
     // this is jumped to before a call instruction, so the caller-saved registers should already be saved
     unsigned char instructionBytes[128] = {
-        0x83, 0xec, 0x08,                         // 0000 // sub esp, 8 // stack depth +8 // 16-byte alignment for function calls
-        0x53,                                     // 0003 // push ebx // stack depth +12
-        0x57,                                     // 0004 // push edi // stack depth +16
-        0x56,                                     // 0005 // push esi // stack depth +20
-        0x51,                                     // 0006 // push ecx // stack depth +24 // steam version copied instructions need ecx
+        0x53,                                     // 0000 // push ebx // stack depth +4
+        0x57,                                     // 0001 // push edi // stack depth +8
+        0x56,                                     // 0002 // push esi // stack depth +12
+        0x51,                                     // 0003 // push ecx // steam version copied instructions need ecx // stack depth +16
+        0x51,                                     // 0004 // push ecx // dummy push // stack depth +20
+        0x51,                                     // 0005 // push ecx // dummy push // stack depth +24
 
         // jmp destination from near the end of the map load
         // starting with 13-14 bytes to get the cSoundHandler object in eax
         // the last byte is a nop instruction because the NoSteam version only uses 13 bytes to get the cSoundHandler object
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x90, // 0007 // getting cSoundHandler object
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x90, // 0006 // getting cSoundHandler object
 
-        0x8b, 0xc8,                               // 0021 // mov ecx, eax // moving cSoundHandler object to ecx
-        0x51,                                     // 0023 // push ecx // cSoundHandler object // stack depth +28
-        0xbb, 0x00, 0x00, 0x00, 0x00,             // 0024 // mov ebx, start of first flashback name
-        0x31, 0xf6,                               // 0029 // xor esi, esi
-        0x90,                                     // 0031 // nop so loop is aligned on byte 32
+        0x8b, 0xc8,                               // 0020 // mov ecx, eax // moving cSoundHandler object to ecx
+        0x51,                                     // 0022 // push ecx // cSoundHandler object // stack depth +28
+        0xbb, 0x00, 0x00, 0x00, 0x00,             // 0023 // mov ebx, start of first flashback name
+        0x31, 0xf6,                               // 0028 // xor esi, esi
+        0x90, 0x90,                               // 0030 // nops so loop is aligned on byte 32
         // start of loop
         0x89, 0x1d, 0x00, 0x00, 0x00, 0x00,       // 0032 // mov [string object ptr location], ebx // ptr to characters
         0x8b, 0x7b, 0x38,                         // 0038 // mov edi, dword ptr [ebx + 0x38] // string size
@@ -633,14 +635,14 @@ bool injectWaitInstructions(SavedInstructions& si, ProcessHelper& ph, uint32_t e
         0x74, 0xc2,                               // 0092 // jz -62
         // end of loop
 
-        0x59,                                     // 0094 // pop ecx // stack depth +24
-        0x59,                                     // 0095 // pop ecx // stack depth +20
-        0x5e,                                     // 0096 // pop esi // stack depth +16
-        0x5f,                                     // 0097 // pop edi // stack depth +12
-        0x5b,                                     // 0098 // pop ebx // stack depth +8
-        0x83, 0xc4, 0x08,                         // 0099 // add esp, 8 // stack depth +0
-        0x00, 0x00, 0x00, 0x00, 0x00,             // 0102 // copied instructions
-        0xe9, 0x00, 0x00, 0x00, 0x00,             // 0107 // jmp to end of load
+        0x83, 0xc4, 0x0c,                         // 0094 // add esp, 12 // stack depth +16
+        0x59,                                     // 0097 // pop ecx // stack depth +12
+        0x5e,                                     // 0098 // pop esi // stack depth +8
+        0x5f,                                     // 0099 // pop edi // stack depth +4
+        0x5b,                                     // 0100 // pop ebx // stack depth +0
+        0x00, 0x00, 0x00, 0x00, 0x00,             // 0101 // copied instructions
+        0xe9, 0x00, 0x00, 0x00, 0x00,             // 0106 // jmp to end of load
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
     };
 
     unsigned char jmpInstruction[sizeof(si.beforeFadeOutAllBytes)] = { 0xe9, 0x00, 0x00, 0x00, 0x00, 0xcc };
@@ -657,7 +659,7 @@ bool injectWaitInstructions(SavedInstructions& si, ProcessHelper& ph, uint32_t e
         return false;
     }
 
-    memcpy(&instructionBytes[7], si.gettingSoundHandler, sizeof(si.gettingSoundHandler) - !(si.isSteamVersion));
+    memcpy(&instructionBytes[6], si.gettingSoundHandler, sizeof(si.gettingSoundHandler) - !(si.isSteamVersion));
 
     uint32_t stringObjectPtrLocation = extraMemoryLocation + sizeof(instructionBytes);
     memcpy(&instructionBytes[34], &stringObjectPtrLocation, sizeof(uint32_t));
@@ -667,7 +669,7 @@ bool injectWaitInstructions(SavedInstructions& si, ProcessHelper& ph, uint32_t e
     memcpy(&instructionBytes[43], &stringObjectSizeLocation, sizeof(uint32_t));
 
     uint32_t firstFlashbackNameLocation = extraMemoryLocation + startOffset;
-    memcpy(&instructionBytes[25], &firstFlashbackNameLocation, sizeof(uint32_t));
+    memcpy(&instructionBytes[24], &firstFlashbackNameLocation, sizeof(uint32_t));
     memcpy(&instructionBytes[86], &firstFlashbackNameLocation, sizeof(uint32_t));
 
     uint32_t endOfFlashbackNames = extraMemoryLocation + startOffset + (flashbackNames * 64);
@@ -675,15 +677,15 @@ bool injectWaitInstructions(SavedInstructions& si, ProcessHelper& ph, uint32_t e
 
     memcpy(&instructionBytes[79], si.sleepCallBytes, sizeof(si.sleepCallBytes));
 
-    memcpy(&instructionBytes[102], si.loadEndBytes, sizeof(si.loadEndBytes));
+    memcpy(&instructionBytes[101], si.loadEndBytes, sizeof(si.loadEndBytes));
 
     uint32_t isPlayingOffset = si.isPlayingLocation - (extraMemoryLocation + 60);
     memcpy(&instructionBytes[56], &isPlayingOffset, sizeof(isPlayingOffset));
 
-    uint32_t loadEndOffset = (si.loadEndLocation + sizeof(si.loadEndBytes)) - (extraMemoryLocation + 112);
-    memcpy(&instructionBytes[108], &loadEndOffset, sizeof(loadEndOffset));
+    uint32_t loadEndOffset = (si.loadEndLocation + sizeof(si.loadEndBytes)) - (extraMemoryLocation + 111);
+    memcpy(&instructionBytes[107], &loadEndOffset, sizeof(loadEndOffset));
 
-    //memset(&instructionBytes[0], 0x90, 102);
+    //memset(&instructionBytes[0], 0x90, 101);
 
     memcpy(forExtraMemory.get(), instructionBytes, sizeof(instructionBytes));
 
@@ -715,7 +717,7 @@ bool injectWaitInstructions(SavedInstructions& si, ProcessHelper& ph, uint32_t e
         &bytesWritten
     );
 
-    //for (int i = 0; i < 112; i++) printf("%d ", instructionBytes[i]); printf("\n");
+    //for (int i = 0; i < 111; i++) printf("%d ", instructionBytes[i]); printf("\n");
 
     if (bytesWritten < sizeof(si.loadEndBytes))
     {
@@ -824,8 +826,6 @@ DWORD codeInjectionMain(bool skipFlashbacks)
     {
         NtResumeProcess(ph.amnesiaHandle);
     }
-    
-    printf("you can now close this window\n");
 
     return injectionSucceeded ? amnesiaPid : (DWORD)-1;
 }

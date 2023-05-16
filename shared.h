@@ -3,67 +3,6 @@
 #define stdprintf(...) (0)
 #endif
 
-static bool checkIfFileExists(const char* filename)
-{
-    FILE* fcheck = nullptr;
-
-    try
-    {
-        bool exists = false;
-#ifdef _WIN32
-        fopen_s(&fcheck, filename, "rb");
-#else
-        fcheck = std::fopen(filename, "rb");
-#endif
-
-        if (fcheck)
-        {
-            std::fclose(fcheck);
-            fcheck = nullptr;
-            exists = true;
-        }
-
-        return exists;
-    }
-    catch (char const* e) // making sure fcheck gets closed if an error happens somehow
-    {
-        if (fcheck)
-        {
-            std::fclose(fcheck);
-        }
-
-        throw std::runtime_error(e);
-    }
-}
-
-// char name[16 + 10 + 4 + 1] starts as "files_and_delays1.txt"
-// 16: "files_and_delays"
-// 10: number part
-// 4: ".txt"
-// 1: '\0'
-static void findCorrectFileName(char* name)
-{
-    unsigned int fileNumber = 1;
-
-    while (checkIfFileExists(name))
-    {
-        fileNumber++;
-        auto [dottxt, ec] = std::to_chars(name + 16, name + 26, fileNumber);
-
-        if (ec == std::errc::value_too_large || fileNumber == 0) // this probably won't ever happen
-        {
-            throw std::runtime_error("too many files_and_delays files");
-        }
-
-        dottxt[0] = '.'; dottxt[1] = 't'; dottxt[2] = 'x'; dottxt[3] = 't';
-    }
-
-    fileNumber--;
-    auto [dottxt, _] = std::to_chars(name + 16, name + 26, fileNumber);
-    // dottxt[4] might not be '\0'. for example, fileNumber decrements from 100 to 99
-    dottxt[0] = '.'; dottxt[1] = 't'; dottxt[2] = 'x'; dottxt[3] = 't'; dottxt[4] = '\0';
-}
-
 class FileHelper
 {
 public:
@@ -72,10 +11,10 @@ public:
     FileHelper(FileHelper&&) = delete;
     FileHelper& operator=(FileHelper&&) = delete;
 
-    explicit FileHelper(const char* filename)
+    explicit FileHelper(const wcharOrChar* filename)
     {
 #ifdef _WIN32
-        if (fopen_s(&_f, filename, "rb") != 0 || !_f)
+        if (_wfopen_s(&_f, filename, L"rb") != 0 || !_f)
 #else
         if (!(_f = std::fopen(filename, "rb")))
 #endif
@@ -194,55 +133,81 @@ public:
 
     MapAndMutex()
     {
+#ifdef _WIN32
+        if (!pathSuccessfullySent)
+        {
+            return;
+        }
+#endif
+
         try
         {
+            bool utf16WarningWritten = false;
+
             // intAsChars used in fillDelaysVector but made here so it doesn't need to be remade repeatedly
             std::vector<char> intAsChars;
             intAsChars.reserve(10);
             intAsChars.push_back('0'); // empty vector causes std::errc::invalid_argument
             vectorType keyVector;
             std::vector<int> delaysVector;
-            char name[16 + 10 + 4 + 1] = "files_and_delays.txt";
-            // 16: "files_and_delays"
-            // 10: number part
-            // 4: ".txt"
-            // 1: '\0'
 
-            if (checkIfFileExists("files_and_delays0.txt"))
-            {
-                char* nameEnd = name + 16;
-                nameEnd[0] = '1'; nameEnd[1] = '.'; nameEnd[2] = 't'; nameEnd[3] = 'x'; nameEnd[4] = 't';
-                findCorrectFileName(name);
-            }
-
-            FileHelper fhelper(name);
 #ifdef _WIN32
+            memcpy(&toolPath[toolPathLength], delaysFileName, sizeof(delaysFileName));
+            FileHelper fhelper(toolPath);
+            memcpy(&toolPath[toolPathLength], logFileName, sizeof(logFileName));
+
             wchar_t byteOrderMark = '\0';
 
             if (!fhelper.getCharacter(byteOrderMark))
             {
-                stdprintf(
+                dllLog(
                     "files_and_delays.txt byte order mark is missing\n\
-make sure files_and_delays.txt is saved as UTF-16 LE\n"
+make sure files_and_delays.txt is saved as UTF-16 LE"
 );
+                utf16WarningWritten = true;
             }
             else if (byteOrderMark != 0xFEFF) // not 0xFFFE due to how wchar_t is read
             {
-                stdprintf(
+                dllLog(
                     "files_and_delays.txt byte order mark isn't marked as UTF-16 LE\n\
-make sure files_and_delays.txt is saved as UTF-16 LE\n"
+make sure files_and_delays.txt is saved as UTF-16 LE"
 );
+                utf16WarningWritten = true;
             }
+#else
+            FileHelper fhelper(delaysFileName);
 #endif
 
             while (addMapPair(fileMap, keyVector, delaysVector, fhelper, intAsChars));
+
+            if (!utf16WarningWritten)
+            {
+                dllLog("no errors detected");
+            }
         }
         catch (const std::runtime_error& e)
         {
             char const* fixC4101Warning = e.what();
-            stdprintf("%s\n", fixC4101Warning);
+            dllLog(fixC4101Warning);
             fileMap.clear(); // clear map so failure is more obvious
         }
+    }
+
+    void dllLog(const char* logMessage)
+    {
+#ifdef _WIN32
+        FILE* errorLogFile = nullptr;
+
+        if (_wfopen_s(&errorLogFile, toolPath, L"w") != 0 || !errorLogFile)
+#else
+        if (!(errorLogFile = std::fopen(filename, "w")))
+#endif
+        {
+            return;
+        }
+
+        fprintf(errorLogFile, "%s\n", logMessage);
+        fclose(errorLogFile);
     }
 
     bool addMapPair(myMapType& fileMap, vectorType& keyVector, std::vector<int>& delaysVector, FileHelper& fhelper, std::vector<char>& intAsChars)
@@ -372,7 +337,7 @@ make sure files_and_delays.txt is saved as UTF-16 LE\n"
 
     void delayFile(MapValue& fileMapValue)
     {
-#ifndef DEBUG // this needs to be reset in the test, so it a global variable instead
+#ifndef DEBUG // this needs to be reset in the test, so it's a global variable instead
         static size_t fullResetCount = 0;
 #endif
         stdprintf("fullResetCount: %zu\n", fullResetCount);
