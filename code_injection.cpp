@@ -454,10 +454,9 @@ uint32_t setFlashbackNames(unsigned char* forExtraMemory, uint32_t startOffset, 
         {
             continue;
         }
-        else if (nameSize >= sizeof(flashbackNameBuffer) || nameSize < 16)
+        else if (nameSize >= sizeof(flashbackNameBuffer))
         {
-            // sso happens at sizes less than 16. None of the flashbacks should have names less than 16.
-            printf("flashback name too %s, maximum length is %zu, minimum length is 16\n", nameSize < 16 ? "small" : "large", sizeof(flashbackNameBuffer) - 1);
+            printf("flashback name too large, maximum length is %zu\n", sizeof(flashbackNameBuffer) - 1);
             return 0;
         }
         else if (startOffset + 64 >= extraMemorySize)
@@ -685,8 +684,6 @@ bool injectWaitInstructions(SavedInstructions& si, ProcessHelper& ph, uint32_t e
     uint32_t loadEndOffset = (si.loadEndLocation + sizeof(si.loadEndBytes)) - (extraMemoryLocation + 111);
     memcpy(&instructionBytes[107], &loadEndOffset, sizeof(loadEndOffset));
 
-    //memset(&instructionBytes[0], 0x90, 101);
-
     memcpy(forExtraMemory.get(), instructionBytes, sizeof(instructionBytes));
 
     SIZE_T bytesWritten = 0;
@@ -716,8 +713,6 @@ bool injectWaitInstructions(SavedInstructions& si, ProcessHelper& ph, uint32_t e
         sizeof(si.loadEndBytes),
         &bytesWritten
     );
-
-    //for (int i = 0; i < 111; i++) printf("%d ", instructionBytes[i]); printf("\n");
 
     if (bytesWritten < sizeof(si.loadEndBytes))
     {
