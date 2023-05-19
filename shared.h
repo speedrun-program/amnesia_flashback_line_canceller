@@ -19,7 +19,6 @@ public:
         if (!(_f = std::fopen(filename, "rb")))
 #endif
         {
-            stdprintf("ERROR: %s\n", filename);
             throw std::runtime_error("FileHelper fopen failure in constructor");
         }
     }
@@ -206,7 +205,16 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
             return;
         }
 
-        fprintf(errorLogFile, "%s\n", logMessage);
+        char timeBuffer[32]{};
+        std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        std::strftime(timeBuffer, sizeof(timeBuffer) - 1, "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+
+        fprintf(
+            errorLogFile,
+            "This file isn't written to until the first time NtCreateFile is called after injection, so make sure the time below seems right.\n%s\n%s\n",
+            timeBuffer,
+            logMessage
+        );
         fclose(errorLogFile);
     }
 
