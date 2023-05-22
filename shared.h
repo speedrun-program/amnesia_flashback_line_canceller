@@ -1,72 +1,9 @@
 
+#include "file_helper.h"
+
 #ifndef DEBUG
-#define stdprintf(...) (0)
+#define printf(...) (0)
 #endif
-
-class FileHelper
-{
-public:
-    FileHelper(const FileHelper& fhelper) = delete;
-    FileHelper& operator=(FileHelper other) = delete;
-    FileHelper(FileHelper&&) = delete;
-    FileHelper& operator=(FileHelper&&) = delete;
-
-    explicit FileHelper(const wcharOrChar* filename)
-    {
-#ifdef _WIN32
-        if (_wfopen_s(&_f, filename, L"rb") != 0 || !_f)
-#else
-        if (!(_f = std::fopen(filename, "rb")))
-#endif
-        {
-            throw std::runtime_error("FileHelper fopen failure in constructor");
-        }
-    }
-
-    ~FileHelper()
-    {
-        if (_f)
-        {
-            std::fclose(_f);
-        }
-    }
-
-    bool getCharacter(wcharOrChar& ch)
-    {
-        if (_bufferPosition == _charactersRead)
-        {
-            _bufferPosition = 0;
-            _charactersRead = (int)std::fread(_buffer.data(), sizeof(wcharOrChar), _buffer.size(), _f);
-
-            if (!_charactersRead)
-            {
-                return false;
-            }
-        }
-
-        ch = _buffer.at(_bufferPosition);
-        _bufferPosition++;
-
-        return true;
-    }
-
-    void resetFile() // used in tests
-    {
-        if (std::fseek(_f, 0, SEEK_SET) != 0)
-        {
-            throw std::runtime_error("FileHelper fseek failure in resetFile");
-        }
-
-        _bufferPosition = 0;
-        _charactersRead = 0;
-    }
-
-private:
-    FILE* _f = nullptr;
-    std::vector<wcharOrChar> _buffer = std::vector<wcharOrChar>(8192 / sizeof(wcharOrChar));
-    int _bufferPosition = 0;
-    int _charactersRead = 0;
-};
 
 struct MapValue
 {
@@ -77,9 +14,9 @@ struct MapValue
     size_t position = 0;
     size_t fullResetCheckNumber = 0;
 
-    explicit MapValue(std::vector<int>& delaysVector) : delays(std::make_unique_for_overwrite<int[]>(delaysVector.size()))
+    explicit MapValue(std::vector<int>& delaysVector) : delays(std::make_unique<int[]>(delaysVector.size()))
     {
-        std::memcpy(delays.get(), delaysVector.data(), delaysVector.size() * sizeof(int));
+        memcpy(delays.get(), delaysVector.data(), delaysVector.size() * sizeof(int));
     }
 };
 
@@ -152,10 +89,10 @@ public:
 
 #ifdef _WIN32
             memcpy(&toolPath[toolPathLength], delaysFileName, sizeof(delaysFileName));
-            FileHelper fhelper(toolPath);
+            FileHelper<wcharOrChar> fhelper(toolPath);
             memcpy(&toolPath[toolPathLength], logFileName, sizeof(logFileName));
 
-            wchar_t byteOrderMark = '\0';
+            wchar_t byteOrderMark = L'\0';
 
             if (!fhelper.getCharacter(byteOrderMark))
             {
@@ -174,7 +111,7 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
                 utf16WarningWritten = true;
             }
 #else
-            FileHelper fhelper(delaysFileName);
+            FileHelper<wcharOrChar> fhelper(delaysFileName);
 #endif
 
             while (addMapPair(fileMap, keyVector, delaysVector, fhelper, intAsChars));
@@ -199,7 +136,7 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
 
         if (_wfopen_s(&errorLogFile, toolPath, L"w") != 0 || !errorLogFile)
 #else
-        if (!(errorLogFile = std::fopen(filename, "w")))
+        if (!(errorLogFile = fopen(filename, "w")))
 #endif
         {
             return;
@@ -218,7 +155,7 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
         fclose(errorLogFile);
     }
 
-    bool addMapPair(myMapType& fileMap, vectorType& keyVector, std::vector<int>& delaysVector, FileHelper& fhelper, std::vector<char>& intAsChars)
+    bool addMapPair(myMapType& fileMap, vectorType& keyVector, std::vector<int>& delaysVector, FileHelper<wcharOrChar>& fhelper, std::vector<char>& intAsChars)
     {
         keyVector.clear();
         delaysVector.clear();
@@ -276,8 +213,8 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
                 }
 
                 keyVector.push_back('\0');
-                uPtrType keyPtr = std::make_unique_for_overwrite<wcharOrChar[]>(keyVector.size());
-                std::memcpy(keyPtr.get(), keyVector.data(), keyVector.size() * sizeof(wcharOrChar));
+                uPtrType keyPtr = std::make_unique<wcharOrChar[]>(keyVector.size());
+                memcpy(keyPtr.get(), keyVector.data(), keyVector.size() * sizeof(wcharOrChar));
                 fileMap.emplace(std::move(keyPtr), MapValue(delaysVector));
             }
         }
@@ -286,7 +223,7 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
     }
 
     // the -2 at the end is added in addMapPair when there isn't already a -1
-    void fillDelaysVector(bool& textRemaining, std::vector<int>& delaysVector, FileHelper& fhelper, std::vector<char>& intAsChars)
+    void fillDelaysVector(bool& textRemaining, std::vector<int>& delaysVector, FileHelper<wcharOrChar>& fhelper, std::vector<char>& intAsChars)
     {
         wcharOrChar ch = '\0';
         int delay = 0;
@@ -348,7 +285,7 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
 #ifndef DEBUG // this needs to be reset in the test, so it's a global variable instead
         static size_t fullResetCount = 0;
 #endif
-        stdprintf("fullResetCount: %zu\n", fullResetCount);
+        printf("fullResetCount: %zu\n", fullResetCount);
         int delay = 0;
 
         {
@@ -358,7 +295,7 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
             {
                 fileMapValue.position = 0;
                 fileMapValue.fullResetCheckNumber = fullResetCount;
-                stdprintf("this delay sequence reset due to prior full reset\n");
+                printf("this delay sequence reset due to prior full reset\n");
             }
 
             if (fileMapValue.delays[0] == -1)
@@ -372,20 +309,20 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
                         MapValue.fullResetCheckNumber = 0;
                     }
 
-                    stdprintf("fullResetCount reset\n");
+                    printf("fullResetCount reset\n");
                 }
 
                 fullResetCount++;
-                stdprintf("fullResetCount set to %zu, all sequences will be reset\n", fullResetCount);
+                printf("fullResetCount set to %zu, all sequences will be reset\n", fullResetCount);
             }
             else if (fileMapValue.delays[fileMapValue.position] == -1)
             {
                 fileMapValue.position = 0;
-                stdprintf("this delay sequence reset\n");
+                printf("this delay sequence reset\n");
             }
             else if (fileMapValue.delays[fileMapValue.position] == -2)
             {
-                stdprintf("delay sequence already finished\n");
+                printf("delay sequence already finished\n");
             }
 
             if (fileMapValue.delays[fileMapValue.position] >= 0)
@@ -394,7 +331,7 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
                 fileMapValue.position++;
             }
 
-            stdprintf("delay is %d millisecond(s)\n\n", delay);
+            printf("delay is %d millisecond(s)\n\n", delay);
         }
 
         if (delay > 0)
