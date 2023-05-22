@@ -26,6 +26,13 @@ how to adjust delays or add maps in files_and_delays.txt:
   The reason to do this is because .hps files don't trigger delays during quickloads or when opening
   a map folder from the debug menu.
 
+how to add more flashbacks:
+- add the sound files to flashback_names.txt.
+- the sound files used by each flashback in are listed in the .flash files in \Amnesia The Dark Descent\flashbacks.
+- in English, the sound files are in \Amnesia The Dark Descent\lang\eng\voices\flashbacks.
+  in Russian, the sound files are in \Amnesia The Dark Descent\lang\rus\voices\flashbacks.
+  you can listen to them to check if they're the ones you want to skip.
+
 
 **You most likely don't need to read the next part.**
 
