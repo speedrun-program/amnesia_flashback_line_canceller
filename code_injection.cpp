@@ -46,8 +46,7 @@ DWORD searchUsingSnapshotHandle(SavedInstructions& si, PROCESSENTRY32& processEn
         {
             return processEntry.th32ProcessID;
         }
-    }
-    while (Process32Next(snapshot, &processEntry));
+    } while (Process32Next(snapshot, &processEntry));
 
     return (DWORD)-1;
 }
