@@ -1,4 +1,4 @@
 
 #include <windows.h>
 
-DWORD codeInjectionMain(bool skipFlashbacks);
+DWORD codeInjectionMain(const bool skipFlashbacks);

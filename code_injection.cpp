@@ -44,12 +44,12 @@ public:
     unsigned char buffer[circularBufferSize]{};
     size_t start = 0;
 
-    unsigned char operator[](size_t idx)
+    unsigned char operator[](const size_t idx) const
     {
         return buffer[(idx + start) & (sizeof(buffer) - 1)];
     }
 
-    void addToEnd(unsigned char newEndValue)
+    void addToEnd(const unsigned char newEndValue)
     {
         buffer[start] = newEndValue;
         start = (start + 1) & (sizeof(buffer) - 1);
@@ -262,7 +262,7 @@ void preprocessFlashbackNames(FileHelper<char>& fh, uint32_t& howManyNames, uint
     fh.resetFile();
 }
 
-bool setFlashbackNames(unsigned char* forExtraMemory, FileHelper<char>& fh, uint32_t startOffset, uint32_t spacePerName, uint32_t extraMemorySize)
+bool setFlashbackNames(unsigned char* forExtraMemory, FileHelper<char>& fh, const uint32_t startOffset, const uint32_t spacePerName, const uint32_t extraMemorySize)
 {
     char ch = '\0';
     uint32_t writeOffset = startOffset;
@@ -310,12 +310,12 @@ bool setFlashbackNames(unsigned char* forExtraMemory, FileHelper<char>& fh, uint
 
 bool injectSkipInstructions(
     unsigned char* forExtraMemory,
-    SavedInstructions& si,
-    ProcessHelper& ph,
-    uint32_t howManyNames,
-    uint32_t spacePerName,
-    uint32_t extraMemoryLocation,
-    uint32_t extraMemorySize)
+    const SavedInstructions& si,
+    const ProcessHelper& ph,
+    const uint32_t howManyNames,
+    const uint32_t spacePerName,
+    const uint32_t extraMemoryLocation,
+    const uint32_t extraMemorySize)
 {
     // this is jumped to before a call instruction, so the caller-saved registers should already be saved
     unsigned char flashbackSkipInstructions[flashbackSkipInstructionsSize] = {
@@ -428,12 +428,12 @@ bool injectSkipInstructions(
 
 bool injectWaitInstructions(
     unsigned char* forExtraMemory,
-    SavedInstructions& si,
-    ProcessHelper& ph,
-    uint32_t howManyNames,
-    uint32_t spacePerName,
-    uint32_t extraMemoryLocation,
-    uint32_t extraMemorySize)
+    const SavedInstructions& si,
+    const ProcessHelper& ph,
+    const uint32_t howManyNames,
+    const uint32_t spacePerName,
+    const uint32_t extraMemoryLocation,
+    const uint32_t extraMemorySize)
 {
     // this is jumped to before a call instruction, so the caller-saved registers should already be saved
     unsigned char flashbackWaitInstructions[flashbackWaitInstructionsSize] = {
@@ -567,7 +567,7 @@ bool injectWaitInstructions(
     return true;
 }
 
-bool injectWhileSuspended(ProcessHelper& ph, SavedInstructions& si, LPVOID& extraMemoryLocation, bool skipFlashbacks)
+bool injectWhileSuspended(ProcessHelper& ph, SavedInstructions& si, LPVOID& extraMemoryLocation, const bool skipFlashbacks)
 {
     if (!ph.findExecutableMemoryLocation())
     {
@@ -654,7 +654,7 @@ bool injectWhileSuspended(ProcessHelper& ph, SavedInstructions& si, LPVOID& extr
     return true;
 }
 
-DWORD codeInjectionMain(bool skipFlashbacks)
+DWORD codeInjectionMain(const bool skipFlashbacks)
 {
     LPVOID extraMemoryLocation = nullptr; // this is here so the virtual pages can be released in the catch block if an unexpected error happens
     HANDLE amnesiaHandle = nullptr; // needed when catching exception
