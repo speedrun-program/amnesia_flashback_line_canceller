@@ -9,6 +9,7 @@
 #include <stdexcept>
 
 #include "file_helper.h"
+#include "process_helper.h"
 
 typedef LONG(__stdcall* NTFUNCTION)(HANDLE);
 
@@ -17,234 +18,6 @@ const wchar_t nosteamName[] = L"Amnesia_NoSteam.exe";
 const char flashbackNameFile[] = "flashback_names.txt";
 const uint32_t flashbackSkipInstructionsSize = 128;
 const uint32_t flashbackWaitInstructionsSize = 128;
-
-class ProcessHelper
-{
-public:
-    std::unique_ptr<unsigned char[]> buffer;
-    uint32_t memoryOffset = 0;
-    uint32_t bytesLeft = 0;
-    HANDLE amnesiaHandle = nullptr;
-    uint32_t amnesiaMemoryLocation = (uint32_t)-1;
-    DWORD pageSize = 0;
-    int bufferPosition = 0;
-
-    ProcessHelper(const ProcessHelper& fhelper) = delete;
-    ProcessHelper& operator=(ProcessHelper other) = delete;
-    ProcessHelper(ProcessHelper&&) = delete;
-    ProcessHelper& operator=(ProcessHelper&&) = delete;
-
-    ProcessHelper(DWORD pid)
-    {
-        amnesiaHandle = OpenProcess(
-            PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_SUSPEND_RESUME,
-            false,
-            pid
-        );
-
-        SYSTEM_INFO sysInfo;
-        GetSystemInfo(&sysInfo);
-        pageSize = sysInfo.dwPageSize;
-        buffer = std::make_unique<unsigned char[]>(pageSize);
-        bufferPosition = pageSize; // this initial value lets the first read happen on the first call to getByte
-    }
-
-    ~ProcessHelper()
-    {
-        if (amnesiaHandle != nullptr)
-        {
-            CloseHandle(amnesiaHandle);
-        }
-    }
-
-    bool checkIfPathIsToAmnesia(const std::wstring& filepathBuffer)
-    {
-        // if L'\\' isn't found, filenamePosition will increase from npos to 0
-        size_t filenamePosition = filepathBuffer.find_last_of(L'\\') + 1;
-        int filenameSize = wcslen(&filepathBuffer[filenamePosition]);
-
-        if ((filenameSize != (sizeof(steamName) / sizeof(wchar_t)) - 1 && filenameSize != (sizeof(nosteamName) / sizeof(wchar_t)) - 1)
-            || (wcscmp(&filepathBuffer[filenamePosition], steamName) != 0 && wcscmp(&filepathBuffer[filenamePosition], nosteamName) != 0))
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    bool checkIfProcessIsAmnesia()
-    {
-        std::wstring filepathBuffer(512 - 1, L'\0'); // - 1 because a character is used for a null terminator on modern implementations
-
-        DWORD queryFullProcessImageNameResult = 0;
-        if (amnesiaHandle != nullptr) // this check gets rid of warning C6387
-        {
-            while (queryFullProcessImageNameResult == 0)
-            {
-                DWORD filepathBufferSize = filepathBuffer.size() - 1; // - 1 because writing to filepathBuffer.size() position is undefined
-                queryFullProcessImageNameResult = QueryFullProcessImageName(amnesiaHandle, 0, &filepathBuffer[0], &filepathBufferSize);
-                if (queryFullProcessImageNameResult == 0)
-                {
-                    DWORD errorNumber = GetLastError();
-                    if (errorNumber == 122) // buffer too small error
-                    {
-                        filepathBuffer.clear();
-                        filepathBuffer.resize(((filepathBufferSize + 2) * 2) - 1, L'\0'); // resizing to the next power of 2
-                    }
-                    else
-                    {
-                        printf("error when using GetModuleBaseName: %d\n", GetLastError());
-                        return false;
-                    }
-                }
-
-                if (filepathBufferSize >= 32767) // this should never happen
-                {
-                    printf("ERROR: file path size from QueryFullProcessImageName somehow exceeded 32767 characters\n");
-                    return false;
-                }
-            }
-        }
-
-        // if L'\\' isn't found, filenamePosition will increase from npos to 0
-        if (!checkIfPathIsToAmnesia(filepathBuffer))
-        {
-            printf("process name wasn't Amnesia.exe or Amnesia_NoSteam.exe when checking it using GetModuleBaseName: %ls\n", &filepathBuffer[0]);
-            return false;
-        }
-
-        return true;
-    }
-
-    bool findExecutableMemoryLocation()
-    {
-        std::wstring filepathBuffer(512 - 1, L'\0'); // - 1 because a character is used for a null terminator on modern implementations
-
-        uint32_t queryAddress = 0;
-        MEMORY_BASIC_INFORMATION mbi = {};
-        if (VirtualQueryEx(amnesiaHandle, (LPCVOID)queryAddress, &mbi, sizeof(mbi)) == 0) // checking if VirtualQueryEx works
-        {
-            printf("error when using VirtualQueryEx: %d\n", GetLastError());
-            return false;
-        }
-
-        // finding start of Amnesia.exe or Amnesia_NoSteam.exe memory
-        DWORD filepathBufferSize = 0;
-        DWORD charactersWritten = 0;
-        size_t filepathLength = (size_t)-1;
-        do
-        {
-            if (queryAddress != 0) // this check gets rid of warning C6387
-            {
-                do
-                {
-                    filepathBufferSize = filepathBuffer.size() - 1; // - 1 because writing to filepathBuffer.size() position is undefined
-                    charactersWritten = GetMappedFileName(
-                        amnesiaHandle,
-                        (LPVOID)queryAddress,
-                        &filepathBuffer[0],
-                        filepathBufferSize
-                    );
-
-                    if (filepathBufferSize == charactersWritten)
-                    {
-                        if (filepathBufferSize >= 32767) // this should never happen
-                        {
-                            continue;
-                        }
-
-                        filepathBuffer.clear();
-                        filepathBuffer.resize(((filepathBufferSize + 2) * 2) - 1, L'\0'); // resizing to the next power of 2
-                    }
-                }
-                while (filepathBufferSize == charactersWritten); // if this is true then filepathBuffer wasn't big enough
-            }
-
-            if (checkIfPathIsToAmnesia(filepathBuffer))
-            {
-                filepathLength = charactersWritten;
-                break;
-            }
-
-            queryAddress += mbi.RegionSize;
-        }
-        while (VirtualQueryEx(amnesiaHandle, (LPCVOID)queryAddress, &mbi, sizeof(mbi)) != 0);
-
-        if (filepathLength == (size_t)-1)
-        {
-            printf("couldn't find Amnesia.exe or Amnesia_NoSteam.exe memory location\n");
-            return false;
-        }
-
-        // finding the .text area
-        std::wstring filepathBufferCopy = filepathBuffer;
-
-        do
-        {
-            if (mbi.Protect == PAGE_EXECUTE_READ)
-            {
-                amnesiaMemoryLocation = queryAddress;
-                bytesLeft = mbi.RegionSize;
-                memoryOffset = queryAddress - pageSize; // this will overflow to 0 on the first call to getByte
-                return true;
-            }
-
-            if (queryAddress != 0) // this check gets rid of warning C6387
-            {
-                charactersWritten = GetMappedFileName(
-                    amnesiaHandle,
-                    (LPVOID)queryAddress,
-                    &filepathBuffer[0],
-                    filepathBufferSize
-                );
-            }
-
-            if (charactersWritten != filepathLength || filepathBuffer != filepathBufferCopy) // no longer looking at exe memory
-            {
-                break;
-            }
-
-            queryAddress += mbi.RegionSize;
-        }
-        while (VirtualQueryEx(amnesiaHandle, (LPCVOID)queryAddress, &mbi, sizeof(mbi)) != 0);
-
-        printf("couldn't find .text area in Amnesia.exe or Amnesia_NoSteam.exe memory\n");
-        return false;
-    }
-
-    bool getByte(unsigned char& b)
-    {
-        if (bytesLeft == 0)
-        {
-            return false;
-        }
-
-        if (bufferPosition == pageSize)
-        {
-            bufferPosition = 0;
-            memoryOffset += pageSize;
-            bool readSucceeded = ReadProcessMemory(
-                amnesiaHandle,
-                (LPCVOID)memoryOffset,
-                (LPVOID)buffer.get(),
-                pageSize,
-                nullptr
-            );
-
-            if (!readSucceeded)
-            {
-                printf("ProcessHelper ReadProcessMemory error in getByte: %d\nat memory address: %u\n", GetLastError(), memoryOffset);
-                return false;
-            }
-        }
-
-        b = buffer[bufferPosition];
-        bufferPosition++;
-        bytesLeft--;
-
-        return true;
-    }
-};
 
 struct SavedInstructions
 {
@@ -345,7 +118,7 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
     unsigned char b = 0;
     unsigned char memorySlice[16]{}; // give this at least the size of the longest byte pattern
 
-    for (int i = 1; i < sizeof(memorySlice); i++)
+    for (size_t i = 1; i < sizeof(memorySlice); i++)
     {
         if (!ph.getByte(b))
         {
@@ -354,8 +127,10 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
         memorySlice[i] = b;
     }
 
-    int locationsFound = 0; // if this ends up being greater than 5, there were duplicate injection location patterns
+    size_t locationsFound = 0; // if this ends up being greater than 5, there were duplicate injection location patterns
     bool isv = si.isSteamVersion; // on the steam version, the first mov instruction is 6 bytes long instead of 5
+
+    // finding where to write to and copy from in amnesia's memory based on instruction byte patterns
     for (size_t i = 0; ph.getByte(b); i++)
     {
         addNewValueToMemorySlice(memorySlice, sizeof(memorySlice), b);
@@ -363,12 +138,12 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
         if (memorySlice[0] == 0xf6 && memorySlice[1] == 0x74 && memorySlice[7] == 0x75 && memorySlice[9] == 0x80)
         {
             locationsFound++;
-            si.stopFunctionLocation = ph.amnesiaMemoryLocation + i - 16;
+            si.stopFunctionLocation = ph.processMemoryLocation + i - 16;
         }
         else if (memorySlice[0] == 0x48 && memorySlice[8] == 0xd0 && memorySlice[9] == 0x5d)
         {
             locationsFound++;
-            si.isPlayingLocation = ph.amnesiaMemoryLocation + i - 17;
+            si.isPlayingLocation = ph.processMemoryLocation + i - 17;
         }
         else if (memorySlice[0] == 0x75 && memorySlice[2] == 0x56 && memorySlice[4] == 0x15 && memorySlice[9] == 0x8b)
         {
@@ -380,7 +155,7 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
             || (si.isSteamVersion && memorySlice[5] == 0xff && memorySlice[6] == 0xd0 && memorySlice[7] == 0xe8 && memorySlice[13] == 0x45))
         {
             locationsFound++;
-            si.loadEndLocation = ph.amnesiaMemoryLocation + i;
+            si.loadEndLocation = ph.processMemoryLocation + i;
 
             if (memorySlice[0] == 0xe9) // the jump instruction is already there, so amnesia must have already been injected
             {
@@ -395,9 +170,9 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
             locationsFound++;
             memcpy(si.gettingSoundHandler, memorySlice, sizeof(si.gettingSoundHandler));
 
-            i += 16 + isv;
-            si.beforeFadeOutAllLocation = ph.amnesiaMemoryLocation + i;
-            for (int n = 0; n < 16 + isv; n++)
+            i += (size_t)16 + isv;
+            si.beforeFadeOutAllLocation = ph.processMemoryLocation + i;
+            for (size_t n = 0; n < 16 + isv; n++)
             {
                 ph.getByte(b);
                 addNewValueToMemorySlice(memorySlice, sizeof(memorySlice), b);
@@ -587,7 +362,7 @@ bool injectSkipInstructions(
     uint32_t endOfFlashbackNames = extraMemoryLocation + startOffset + (howManyNames * spacePerName);
     memcpy(&flashbackSkipInstructions[55], &endOfFlashbackNames, sizeof(uint32_t));
 
-    uint32_t fadeOutAllOffset = (si.beforeFadeOutAllLocation + sizeof(si.beforeFadeOutAllBytes)) - (extraMemoryLocation + 69);
+    uint32_t fadeOutAllOffset = (si.beforeFadeOutAllLocation + sizeof(si.beforeFadeOutAllBytes)) - ((size_t)extraMemoryLocation + 69);
     memcpy(&flashbackSkipInstructions[65], &fadeOutAllOffset, sizeof(fadeOutAllOffset));
 
     memset(&flashbackSkipInstructions[70], 0xcc, sizeof(flashbackSkipInstructions) - 70); // int3
@@ -598,7 +373,7 @@ bool injectSkipInstructions(
     bool wpmSucceeded = false;
 
     wpmSucceeded = WriteProcessMemory(
-        ph.amnesiaHandle,
+        ph.processHandle,
         (LPVOID)extraMemoryLocation,
         (LPCVOID)forExtraMemory,
         extraMemorySize,
@@ -615,7 +390,7 @@ bool injectSkipInstructions(
     memcpy(&jmpInstruction[1], &offsetFromCheckMapChange, sizeof(offsetFromCheckMapChange));
 
     wpmSucceeded = WriteProcessMemory(
-        ph.amnesiaHandle,
+        ph.processHandle,
         (LPVOID)si.beforeFadeOutAllLocation,
         (LPCVOID)jmpInstruction,
         sizeof(si.beforeFadeOutAllBytes),
@@ -729,7 +504,7 @@ bool injectWaitInstructions(
 
     memcpy(&flashbackWaitInstructions[107], si.loadEndBytes, sizeof(si.loadEndBytes));
 
-    uint32_t loadEndOffset = (si.loadEndLocation + sizeof(si.loadEndBytes)) - (extraMemoryLocation + 117);
+    uint32_t loadEndOffset = (si.loadEndLocation + sizeof(si.loadEndBytes)) - ((size_t)extraMemoryLocation + 117);
     memcpy(&flashbackWaitInstructions[113], &loadEndOffset, sizeof(loadEndOffset));
 
     memset(&flashbackWaitInstructions[118], 0xcc, sizeof(flashbackWaitInstructions) - 118); // int3
@@ -740,7 +515,7 @@ bool injectWaitInstructions(
     bool wpmSucceeded = false;
 
     wpmSucceeded = WriteProcessMemory(
-        ph.amnesiaHandle,
+        ph.processHandle,
         (LPVOID)extraMemoryLocation,
         (LPCVOID)forExtraMemory,
         extraMemorySize,
@@ -757,7 +532,7 @@ bool injectWaitInstructions(
     memcpy(&jmpInstruction[1], &offsetFromCheckMapChange, sizeof(offsetFromCheckMapChange));
 
     wpmSucceeded = WriteProcessMemory(
-        ph.amnesiaHandle,
+        ph.processHandle,
         (LPVOID)si.loadEndLocation,
         (LPCVOID)jmpInstruction,
         sizeof(si.loadEndBytes),
@@ -822,7 +597,7 @@ bool injectWhileSuspended(ProcessHelper& ph, SavedInstructions& si, LPVOID& extr
     }
 
     extraMemoryLocation = VirtualAllocEx(
-        ph.amnesiaHandle,
+        ph.processHandle,
         nullptr,
         extraMemorySize,
         MEM_COMMIT | MEM_RESERVE,
@@ -847,7 +622,7 @@ bool injectWhileSuspended(ProcessHelper& ph, SavedInstructions& si, LPVOID& extr
     if (!injectionSucceeded)
     {
         bool extraMemoryFreed = VirtualFreeEx(
-            ph.amnesiaHandle,
+            ph.processHandle,
             extraMemoryLocation,
             0,
             MEM_RELEASE
@@ -882,32 +657,25 @@ DWORD codeInjectionMain(bool skipFlashbacks)
 
         if (amnesiaPid == (DWORD)-1)
         {
-            printf("you can now close this window\n");
             return (DWORD)-1;
         }
 
-        ProcessHelper ph(amnesiaPid);
+        ProcessHelper ph(amnesiaPid, (si.isSteamVersion ? steamName : nosteamName));
 
-        if (!ph.checkIfProcessIsAmnesia())
-        {
-            printf("you can now close this window\n");
-            return (DWORD)-1;
-        }
-
-        amnesiaHandle = ph.amnesiaHandle;
+        amnesiaHandle = ph.processHandle;
 
         bool ntFunctionsFound = findNtFunctions(NtSuspendProcess, NtResumeProcess);
 
         if (ntFunctionsFound)
         {
-            NtSuspendProcess(ph.amnesiaHandle);
+            NtSuspendProcess(ph.processHandle);
         }
 
         bool injectionSucceeded = injectWhileSuspended(ph, si, extraMemoryLocation, skipFlashbacks);
 
         if (ntFunctionsFound)
         {
-            NtResumeProcess(ph.amnesiaHandle);
+            NtResumeProcess(ph.processHandle);
         }
 
         return injectionSucceeded ? amnesiaPid : (DWORD)-1;
