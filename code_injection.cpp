@@ -310,24 +310,24 @@ bool injectSkipInstructions(
         0x53,                                     // 0007 // push ebx // stack depth +4
         0x57,                                     // 0008 // push edi // stack depth +8
         0x51,                                     // 0009 // push ecx // cSoundHandler object // stack depth +12
-        0xbb, 0x00, 0x00, 0x00, 0x00,             // 0010 // mov ebx, start of first flashback name // check
+        0xbb, 0x00, 0x00, 0x00, 0x00,             // 0010 // mov ebx, start of first flashback name
         0x90,                                     // 0015 // nop so loop is aligned on byte 16
         // start of loop
-        0x89, 0x1d, 0x00, 0x00, 0x00, 0x00,       // 0016 // mov [string object ptr location], ebx // ptr to characters // check
+        0x89, 0x1d, 0x00, 0x00, 0x00, 0x00,       // 0016 // mov [string object ptr location], ebx // ptr to characters
         0x8b, 0xbb, 0x00, 0x00, 0x00, 0x00,       // 0022 // mov edi, dword ptr [ebx + spacePerName - 8] // flashback name size
-        0x89, 0x3d, 0x00, 0x00, 0x00, 0x00,       // 0028 // mov dword ptr [string object size location], edi // check
-        0x68, 0x00, 0x00, 0x00, 0x00,             // 0034 // push string object ptr location // stack depth +16 // check
+        0x89, 0x3d, 0x00, 0x00, 0x00, 0x00,       // 0028 // mov dword ptr [string object size location], edi
+        0x68, 0x00, 0x00, 0x00, 0x00,             // 0034 // push string object ptr location // stack depth +16
         0xe8, 0x00, 0x00, 0x00, 0x00,             // 0039 // call cSoundHandler::Stop // stack depth +12
         0x8b, 0x0c, 0x24,                         // 0044 // mov ecx, dword ptr [esp] // cSoundHandler object
         0x81, 0xc3, 0x00, 0x00, 0x00, 0x00,       // 0047 // add ebx, spacePerName // start of next string data
-        0x81, 0xfb, 0x00, 0x00, 0x00, 0x00,       // 0053 // cmp ebx, end of flashback names // check
+        0x81, 0xfb, 0x00, 0x00, 0x00, 0x00,       // 0053 // cmp ebx, end of flashback names
         0x75, 0xd3,                               // 0059 // jnz -45
         // end of loop
 
         0x59,                                     // 0061 // pop ecx // stack depth +8
         0x5f,                                     // 0062 // pop edi // stack depth +4
         0x5b,                                     // 0063 // pop ebx // stack depth +0
-        0xe9, 0x00, 0x00, 0x00, 0x00,             // 0064 // jmp to before calling cSoundHandler::FadeOutAll, 0048baad
+        0xe9, 0x00, 0x00, 0x00, 0x00,             // 0064 // jmp to before calling cSoundHandler::FadeOutAll
         0x90,                                     // 0069 // nop
     };
 
