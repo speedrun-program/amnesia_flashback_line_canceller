@@ -126,34 +126,34 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
         memorySlice[i] = b;
     }
 
-    size_t locationsFound = 0; // if this ends up being greater than 5, there were duplicate injection location patterns
+    size_t instructionPatternsFound = 0; // if this ends up being greater than 5, there were duplicate injection location patterns
     bool isv = si.isSteamVersion; // on the steam version, the first mov instruction is 6 bytes long instead of 5
 
     // finding where to write to and copy from in amnesia's memory based on instruction byte patterns
-    for (size_t i = 0; ph.getByte(b); i++)
+    for (size_t i = 0; ph.getByte(b) && instructionPatternsFound < 5; i++)
     {
         addNewValueToMemorySlice(memorySlice, sizeof(memorySlice), b);
 
         if (memorySlice[0] == 0xf6 && memorySlice[1] == 0x74 && memorySlice[7] == 0x75 && memorySlice[9] == 0x80)
         {
-            locationsFound++;
+            instructionPatternsFound++;
             si.stopFunctionLocation = ph.processMemoryLocation + i - 16;
         }
         else if (memorySlice[0] == 0x48 && memorySlice[8] == 0xd0 && memorySlice[9] == 0x5d)
         {
-            locationsFound++;
+            instructionPatternsFound++;
             si.isPlayingLocation = ph.processMemoryLocation + i - 17;
         }
         else if (memorySlice[0] == 0x75 && memorySlice[2] == 0x56 && memorySlice[4] == 0x15 && memorySlice[9] == 0x8b)
         {
-            locationsFound++;
+            instructionPatternsFound++;
             memcpy(si.sleepCallBytes, &memorySlice[3], sizeof(si.sleepCallBytes));
         }
         else if (
             (memorySlice[5] == 0xff && memorySlice[6] == 0x50 && memorySlice[8] == 0xe8 && memorySlice[13] == 0x2b)
             || (si.isSteamVersion && memorySlice[5] == 0xff && memorySlice[6] == 0xd0 && memorySlice[7] == 0xe8 && memorySlice[13] == 0x45))
         {
-            locationsFound++;
+            instructionPatternsFound++;
             si.loadEndLocation = ph.processMemoryLocation + i;
 
             if (memorySlice[0] == 0xe9) // the jump instruction is already there, so amnesia must have already been injected
@@ -166,7 +166,7 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
         }
         else if (memorySlice[8 + isv] == 0x40 && memorySlice[10 + isv] == 0x8b && memorySlice[11 + isv] == 0x40 && memorySlice[14 + isv] == 0x01)
         {
-            locationsFound++;
+            instructionPatternsFound++;
             memcpy(si.gettingSoundHandler, memorySlice, sizeof(si.gettingSoundHandler));
 
             i += (size_t)16 + isv;
@@ -187,24 +187,12 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
         }
     }
 
-    bool allLocationsFound = (
-        si.stopFunctionLocation != 0
-        && si.isPlayingLocation != 0
-        && si.beforeFadeOutAllLocation != 0
-        && si.loadEndLocation != 0
-        && si.sleepCallBytes[0] != 0
-    );
-    if (locationsFound > 5 || (locationsFound == 5 && !allLocationsFound))
-    {
-        printf("error: duplicate injection location patterns found\n");
-        return false;
-    }
-    else if (allLocationsFound)
+    if (si.stopFunctionLocation != 0 && si.isPlayingLocation != 0 && si.beforeFadeOutAllLocation != 0 && si.loadEndLocation != 0 && si.sleepCallBytes[0] != 0)
     {
         return true;
     }
 
-    printf("couldn't find all instruction locations\n");
+    printf("%s\n", instructionPatternsFound == 5 ? "error: duplicate injection location patterns found" : "couldn't find all instruction locations");
     return false;
 }
 
@@ -421,6 +409,7 @@ bool injectWaitInstructions(
 {
     // this is jumped to before a call instruction, so the caller-saved registers should already be saved
     unsigned char flashbackWaitInstructions[flashbackWaitInstructionsSize] = {
+        // jmp destination from near the end of the map load
         0x53,                                     // 0000 // push ebx // stack depth +4
         0x57,                                     // 0001 // push edi // stack depth +8
         0x56,                                     // 0002 // push esi // stack depth +12
@@ -428,8 +417,6 @@ bool injectWaitInstructions(
         0x51,                                     // 0004 // push ecx // dummy push // stack depth +20
         0x51,                                     // 0005 // push ecx // dummy push // stack depth +24
 
-        // jmp destination from near the end of the map load
-        // starting with 13-14 bytes to get the cSoundHandler object in eax
         // the last byte is a nop instruction because the NoSteam version only uses 13 bytes to get the cSoundHandler object
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x90, // 0006 // getting cSoundHandler object
 
