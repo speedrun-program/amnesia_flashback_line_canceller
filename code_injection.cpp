@@ -32,6 +32,30 @@ struct SavedInstructions
     bool isSteamVersion = false;
 };
 
+// this is used in findInstructions to make it faster since searching takes a perceptible amount of time on my computer
+template <const size_t circularBufferSize>
+class CircularBuffer
+{
+public:
+    static_assert(
+        circularBufferSize && ((circularBufferSize& (circularBufferSize - 1)) == 0),
+        "circular buffer size needs to be a power of two and greater than zero"
+        );
+    unsigned char buffer[circularBufferSize]{};
+    size_t start = 0;
+
+    unsigned char operator[](size_t idx)
+    {
+        return buffer[(idx + start) & (sizeof(buffer) - 1)];
+    }
+
+    void addToEnd(unsigned char newEndValue)
+    {
+        buffer[start] = newEndValue;
+        start = (start + 1) & (sizeof(buffer) - 1);
+    }
+};
+
 DWORD searchUsingSnapshotHandle(SavedInstructions& si, PROCESSENTRY32& processEntry, HANDLE snapshot)
 {
     if (!Process32First(snapshot, &processEntry))
@@ -101,38 +125,28 @@ bool findNtFunctions(NTFUNCTION& NtSuspendProcess, NTFUNCTION& NtResumeProcess)
     return true;
 }
 
-void addNewValueToMemorySlice(unsigned char* memorySlice, size_t size, unsigned char newEndValue)
-{
-    for (size_t i = 0; i < size - 1; i++)
-    {
-        memorySlice[i] = memorySlice[i + 1];
-    }
-    memorySlice[size - 1] = newEndValue;
-}
-
-// this is fast enough for the size of the game
-// if it needs to be faster, try making memorySlice a circular buffer
 bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
 {
     unsigned char b = 0;
-    unsigned char memorySlice[16]{}; // give this at least the size of the longest byte pattern
+    CircularBuffer<16> memorySlice; // give this at least the size of the longest byte pattern
 
-    for (size_t i = 1; i < sizeof(memorySlice); i++)
+    bool isv = si.isSteamVersion; // on the steam version, the first mov instruction is 6 bytes long instead of 5
+    size_t instructionPatternsFound = 0; // if this ends up being greater than 5, there were duplicate injection location patterns
+
+
+    for (size_t i = 1; i < sizeof(memorySlice.buffer); i++) // filling memorySlice with initial bytes and making sure ph.getByte works
     {
         if (!ph.getByte(b))
         {
             return false;
         }
-        memorySlice[i] = b;
+        memorySlice.addToEnd(b);
     }
-
-    size_t instructionPatternsFound = 0; // if this ends up being greater than 5, there were duplicate injection location patterns
-    bool isv = si.isSteamVersion; // on the steam version, the first mov instruction is 6 bytes long instead of 5
 
     // finding where to write to and copy from in amnesia's memory based on instruction byte patterns
     for (size_t i = 0; ph.getByte(b) && instructionPatternsFound < 5; i++)
     {
-        addNewValueToMemorySlice(memorySlice, sizeof(memorySlice), b);
+        memorySlice.addToEnd(b);
 
         if (memorySlice[0] == 0xf6 && memorySlice[1] == 0x74 && memorySlice[7] == 0x75 && memorySlice[9] == 0x80)
         {
@@ -147,7 +161,11 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
         else if (memorySlice[0] == 0x75 && memorySlice[2] == 0x56 && memorySlice[4] == 0x15 && memorySlice[9] == 0x8b)
         {
             instructionPatternsFound++;
-            memcpy(si.sleepCallBytes, &memorySlice[3], sizeof(si.sleepCallBytes));
+
+            for (size_t memorySliceIdx = 0; memorySliceIdx < sizeof(si.sleepCallBytes); memorySliceIdx++)
+            {
+                si.sleepCallBytes[memorySliceIdx] = memorySlice[memorySliceIdx + 3];
+            }
         }
         else if (
             (memorySlice[5] == 0xff && memorySlice[6] == 0x50 && memorySlice[8] == 0xe8 && memorySlice[13] == 0x2b)
@@ -162,19 +180,26 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
                 return false;
             }
 
-            memcpy(si.loadEndBytes, memorySlice, sizeof(si.loadEndBytes));
+            for (size_t memorySliceIdx = 0; memorySliceIdx < sizeof(si.loadEndBytes); memorySliceIdx++)
+            {
+                si.loadEndBytes[memorySliceIdx] = memorySlice[memorySliceIdx];
+            }
         }
-        else if (memorySlice[8 + isv] == 0x40 && memorySlice[10 + isv] == 0x8b && memorySlice[11 + isv] == 0x40 && memorySlice[14 + isv] == 0x01)
+        else if (memorySlice[(size_t)8 + isv] == 0x40 && memorySlice[(size_t)10 + isv] == 0x8b && memorySlice[(size_t)11 + isv] == 0x40 && memorySlice[(size_t)14 + isv] == 0x01)
         {
             instructionPatternsFound++;
-            memcpy(si.gettingSoundHandler, memorySlice, sizeof(si.gettingSoundHandler));
+
+            for (size_t memorySliceIdx = 0; memorySliceIdx < sizeof(si.gettingSoundHandler); memorySliceIdx++)
+            {
+                si.gettingSoundHandler[memorySliceIdx] = memorySlice[memorySliceIdx];
+            }
 
             i += (size_t)16 + isv;
             si.beforeFadeOutAllLocation = ph.processMemoryLocation + i;
-            for (size_t n = 0; n < 16 + isv; n++)
+            for (size_t n = 0; n < (size_t)16 + isv; n++)
             {
                 ph.getByte(b);
-                addNewValueToMemorySlice(memorySlice, sizeof(memorySlice), b);
+                memorySlice.addToEnd(b);
             }
 
             if (memorySlice[0] == 0xe9) // the jump instruction is already there, so amnesia must have already been injected
@@ -183,7 +208,10 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
                 return false;
             }
 
-            memcpy(si.beforeFadeOutAllBytes, memorySlice, sizeof(si.beforeFadeOutAllBytes));
+            for (size_t memorySliceIdx = 0; memorySliceIdx < sizeof(si.beforeFadeOutAllBytes); memorySliceIdx++)
+            {
+                si.beforeFadeOutAllBytes[memorySliceIdx] = memorySlice[memorySliceIdx];
+            }
         }
     }
 
