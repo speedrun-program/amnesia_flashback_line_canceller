@@ -54,6 +54,14 @@ public:
         buffer[start] = newEndValue;
         start = (start + 1) & (sizeof(buffer) - 1);
     }
+
+    void copyBytes(unsigned char* destination, const size_t startIdx, const size_t howManyBytes) const
+    {
+        for (size_t i = 0; i < howManyBytes; i++)
+        {
+            destination[i] = buffer[(start + i + startIdx) & (sizeof(buffer) - 1)];
+        }
+    }
 };
 
 DWORD searchUsingSnapshotHandle(SavedInstructions& si, PROCESSENTRY32& processEntry, HANDLE snapshot)
@@ -161,11 +169,7 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
         else if (memorySlice[0] == 0x75 && memorySlice[2] == 0x56 && memorySlice[4] == 0x15 && memorySlice[9] == 0x8b)
         {
             instructionPatternsFound++;
-
-            for (size_t memorySliceIdx = 0; memorySliceIdx < sizeof(si.sleepCallBytes); memorySliceIdx++)
-            {
-                si.sleepCallBytes[memorySliceIdx] = memorySlice[memorySliceIdx + 3];
-            }
+            memorySlice.copyBytes(si.sleepCallBytes, 3, sizeof(si.sleepCallBytes));
         }
         else if (
             (memorySlice[5] == 0xff && memorySlice[6] == 0x50 && memorySlice[8] == 0xe8 && memorySlice[13] == 0x2b)
@@ -180,19 +184,12 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
                 return false;
             }
 
-            for (size_t memorySliceIdx = 0; memorySliceIdx < sizeof(si.loadEndBytes); memorySliceIdx++)
-            {
-                si.loadEndBytes[memorySliceIdx] = memorySlice[memorySliceIdx];
-            }
+            memorySlice.copyBytes(si.loadEndBytes, 0, sizeof(si.loadEndBytes));
         }
         else if (memorySlice[(size_t)8 + isv] == 0x40 && memorySlice[(size_t)10 + isv] == 0x8b && memorySlice[(size_t)11 + isv] == 0x40 && memorySlice[(size_t)14 + isv] == 0x01)
         {
             instructionPatternsFound++;
-
-            for (size_t memorySliceIdx = 0; memorySliceIdx < sizeof(si.gettingSoundHandler); memorySliceIdx++)
-            {
-                si.gettingSoundHandler[memorySliceIdx] = memorySlice[memorySliceIdx];
-            }
+            memorySlice.copyBytes(si.gettingSoundHandler, 0, sizeof(si.gettingSoundHandler));
 
             i += (size_t)16 + isv;
             si.beforeFadeOutAllLocation = ph.processMemoryLocation + i;
@@ -208,10 +205,7 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
                 return false;
             }
 
-            for (size_t memorySliceIdx = 0; memorySliceIdx < sizeof(si.beforeFadeOutAllBytes); memorySliceIdx++)
-            {
-                si.beforeFadeOutAllBytes[memorySliceIdx] = memorySlice[memorySliceIdx];
-            }
+            memorySlice.copyBytes(si.beforeFadeOutAllBytes, 0, sizeof(si.beforeFadeOutAllBytes));
         }
     }
 
