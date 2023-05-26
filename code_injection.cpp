@@ -4,7 +4,6 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <cstdint>
-#include <string>
 #include <memory>
 #include <stdexcept>
 
@@ -678,7 +677,7 @@ DWORD codeInjectionMain(const bool skipFlashbacks)
         {
             NtSuspendProcess(ph.processHandle);
         }
-
+        
         bool injectionSucceeded = injectWhileSuspended(ph, si, extraMemoryLocation, skipFlashbacks);
 
         if (ntFunctionsFound)

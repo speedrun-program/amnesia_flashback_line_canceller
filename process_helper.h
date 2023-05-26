@@ -22,7 +22,7 @@ public:
     ProcessHelper(ProcessHelper&&) = delete;
     ProcessHelper& operator=(ProcessHelper&&) = delete;
 
-    ProcessHelper(DWORD pid, const wchar_t* processNameCString)
+    ProcessHelper(const DWORD pid, const wchar_t* processNameCString)
     {
         processHandle = OpenProcess(
             PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_SUSPEND_RESUME,
@@ -58,24 +58,26 @@ public:
         }
     }
 
-    bool checkIfProcessIsCorrect()
+    bool checkIfProcessIsCorrect() const
     {
-        std::wstring filepathBuffer(512 - 1, L'\0'); // - 1 because a character is used for a null terminator on modern implementations
+        DWORD filepathBufferSize = 512;
+        std::unique_ptr<wchar_t[]> filepathBuffer;
 
         DWORD queryFullProcessImageNameResult = 0;
         if (processHandle != nullptr) // this check gets rid of warning C6387
         {
             while (queryFullProcessImageNameResult == 0)
             {
-                DWORD filepathBufferSize = filepathBuffer.size() - 1; // - 1 because writing to filepathBuffer.size() position is undefined
-                queryFullProcessImageNameResult = QueryFullProcessImageName(processHandle, 0, &filepathBuffer[0], &filepathBufferSize);
+                filepathBuffer = std::make_unique<wchar_t[]>(filepathBufferSize);
+                DWORD charactersWritten = filepathBufferSize - 1; // decremented for null character
+
+                queryFullProcessImageNameResult = QueryFullProcessImageName(processHandle, 0, filepathBuffer.get(), &charactersWritten);
                 if (queryFullProcessImageNameResult == 0)
                 {
                     DWORD errorNumber = GetLastError();
                     if (errorNumber == 122) // buffer too small error
                     {
-                        filepathBuffer.clear();
-                        filepathBuffer.resize((((size_t)filepathBufferSize + 2) * 2) - 1, L'\0'); // resizing to the next power of 2
+                        filepathBufferSize *= 2;
                     }
                     else
                     {
@@ -92,10 +94,11 @@ public:
             }
         }
 
-        // if L'\\' isn't found, filenamePosition will increase from npos to 0
-        if (wcscmp(&filepathBuffer[filepathBuffer.find_last_of(L'\\') + 1], processName) != 0)
+        wchar_t* filename = wcsrchr(filepathBuffer.get(), L'\\');
+        filename = (filename != nullptr) ? filename + 1 : filepathBuffer.get();
+        if (wcscmp(filename, processName) != 0)
         {
-            printf("unexpected process name when checking it using GetModuleBaseName: %ls\n", &filepathBuffer[0]);
+            printf("unexpected process name when checking it using GetModuleBaseName: %ls\n", filepathBuffer.get());
             return false;
         }
 
@@ -104,7 +107,8 @@ public:
 
     bool findExecutableMemoryLocation()
     {
-        std::wstring filepathBuffer(512 - 1, L'\0'); // - 1 because a character is used for a null terminator on modern implementations
+        DWORD filepathBufferSize = 512;
+        std::unique_ptr<wchar_t[]> filepathBuffer = std::make_unique<wchar_t[]>(filepathBufferSize);
 
         uint32_t queryAddress = 0;
         MEMORY_BASIC_INFORMATION mbi = {};
@@ -113,40 +117,42 @@ public:
             printf("error when using VirtualQueryEx: %d\n", GetLastError());
             return false;
         }
-
+        
         // finding start of process memory
-        DWORD filepathBufferSize = 0;
         DWORD charactersWritten = 0;
         size_t filepathLength = (size_t)-1;
         do
         {
             if (queryAddress != 0) // this check gets rid of warning C6387
             {
-                do
+                bool filePathCopied = false;
+                while (!filePathCopied)
                 {
-                    filepathBufferSize = filepathBuffer.size() - 1; // - 1 because writing to filepathBuffer.size() position is undefined
                     charactersWritten = GetMappedFileName(
                         processHandle,
                         (LPVOID)queryAddress,
-                        &filepathBuffer[0],
-                        filepathBufferSize
+                        filepathBuffer.get(),
+                        filepathBufferSize - 1 // - 1 so there's always a L'\0' at the end
                     );
-
-                    if (filepathBufferSize == charactersWritten)
+                    if (filepathBufferSize >= 32767) // this should never happen
                     {
-                        if (filepathBufferSize >= 32767) // this should never happen
-                        {
-                            continue;
-                        }
-
-                        filepathBuffer.clear();
-                        filepathBuffer.resize((((size_t)filepathBufferSize + 2) * 2) - 1, L'\0'); // resizing to the next power of 2
+                        break;
                     }
-                } while (filepathBufferSize == charactersWritten); // if this is true then filepathBuffer wasn't big enough
+                    else if (filepathBufferSize - 1 == charactersWritten)
+                    {
+                        filepathBufferSize *= 2;
+                        filepathBuffer = std::make_unique<wchar_t[]>(filepathBufferSize);
+                    }
+                    else
+                    {
+                        filePathCopied = true;
+                    }
+                }
             }
-
-            // if L'\\' isn't found, filenamePosition will increase from npos to 0
-            if (wcscmp(&filepathBuffer[filepathBuffer.find_last_of(L'\\') + 1], processName) == 0)
+            
+            wchar_t* filename = wcsrchr(filepathBuffer.get(), L'\\');
+            filename = (filename != nullptr) ? filename + 1 : filepathBuffer.get();
+            if (wcscmp(filename, processName) == 0)
             {
                 filepathLength = charactersWritten;
                 break;
@@ -160,10 +166,11 @@ public:
             printf("couldn't find process memory location\n");
             return false;
         }
-
+        
         // finding the .text area
-        std::wstring filepathBufferCopy = filepathBuffer;
-
+        std::unique_ptr<wchar_t[]> filepathBufferCopy = std::make_unique<wchar_t[]>(filepathBufferSize);
+        memcpy(filepathBufferCopy.get(), filepathBuffer.get(), filepathBufferSize * sizeof(wchar_t));
+        
         do
         {
             if (mbi.Protect == PAGE_EXECUTE_READ)
@@ -184,7 +191,8 @@ public:
                 );
             }
 
-            if (charactersWritten != filepathLength || filepathBuffer != filepathBufferCopy) // no longer looking at exe memory
+            // no longer looking at exe memory
+            if (charactersWritten != filepathLength || wcscmp(filepathBuffer.get(), filepathBufferCopy.get()) != 0)
             {
                 break;
             }
