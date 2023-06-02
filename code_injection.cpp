@@ -28,7 +28,6 @@ struct SavedInstructions
     uint32_t isPlayingLocation = 0;
     uint32_t beforeFadeOutAllLocation = 0;
     uint32_t loadEndLocation = 0;
-    bool isSteamVersion = false;
 };
 
 // this is used in findInstructions to make it faster since searching takes a perceptible amount of time on my computer
@@ -63,7 +62,7 @@ public:
     }
 };
 
-DWORD searchUsingSnapshotHandle(SavedInstructions& si, PROCESSENTRY32& processEntry, HANDLE snapshot)
+DWORD searchUsingSnapshotHandle(SavedInstructions& si, PROCESSENTRY32& processEntry, HANDLE snapshot, bool& isSteamVersion)
 {
     if (!Process32First(snapshot, &processEntry))
     {
@@ -73,7 +72,7 @@ DWORD searchUsingSnapshotHandle(SavedInstructions& si, PROCESSENTRY32& processEn
 
     do
     {
-        if ((si.isSteamVersion = (wcscmp(processEntry.szExeFile, steamName) == 0)) || wcscmp(processEntry.szExeFile, nosteamName) == 0)
+        if ((isSteamVersion = (wcscmp(processEntry.szExeFile, steamName) == 0)) || wcscmp(processEntry.szExeFile, nosteamName) == 0)
         {
             return processEntry.th32ProcessID;
         }
@@ -82,7 +81,7 @@ DWORD searchUsingSnapshotHandle(SavedInstructions& si, PROCESSENTRY32& processEn
     return (DWORD)-1;
 }
 
-DWORD findAmnesiaPid(SavedInstructions& si)
+DWORD findAmnesiaPid(SavedInstructions& si, bool& isSteamVersion)
 {
     DWORD amnesiaPid = (DWORD)-1;
 
@@ -95,7 +94,7 @@ DWORD findAmnesiaPid(SavedInstructions& si)
         printf("error when using CreateToolhelp32Snapshot: %d\n", GetLastError());
         return amnesiaPid;
     }
-    amnesiaPid = searchUsingSnapshotHandle(si, processEntry, snapshot);
+    amnesiaPid = searchUsingSnapshotHandle(si, processEntry, snapshot, isSteamVersion);
     CloseHandle(snapshot);
 
     if (amnesiaPid == (DWORD)-1)
@@ -137,7 +136,6 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
     unsigned char b = 0;
     CircularBuffer<16> memorySlice; // give this at least the size of the longest byte pattern
 
-    bool isv = si.isSteamVersion; // on the steam version, the first mov instruction is 6 bytes long instead of 5
     size_t instructionPatternsFound = 0; // if this ends up being greater than 5, there were duplicate injection location patterns
 
 
@@ -170,9 +168,7 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
             instructionPatternsFound++;
             memorySlice.copyBytes(si.sleepCallBytes, 3, sizeof(si.sleepCallBytes));
         }
-        else if (
-            (memorySlice[5] == 0xff && memorySlice[6] == 0x50 && memorySlice[8] == 0xe8 && memorySlice[13] == 0x2b)
-            || (si.isSteamVersion && memorySlice[5] == 0xff && memorySlice[6] == 0xd0 && memorySlice[7] == 0xe8 && memorySlice[13] == 0x45))
+        else if (memorySlice[5] == 0xff && memorySlice[6] == 0xd0 && memorySlice[7] == 0xe8 && memorySlice[13] == 0x45)
         {
             instructionPatternsFound++;
             si.loadEndLocation = ph.processMemoryLocation + i;
@@ -185,14 +181,14 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
 
             memorySlice.copyBytes(si.loadEndBytes, 0, sizeof(si.loadEndBytes));
         }
-        else if (memorySlice[(size_t)8 + isv] == 0x40 && memorySlice[(size_t)10 + isv] == 0x8b && memorySlice[(size_t)11 + isv] == 0x40 && memorySlice[(size_t)14 + isv] == 0x01)
+        else if (memorySlice[9] == 0x40 && memorySlice[11] == 0x8b && memorySlice[12] == 0x40 && memorySlice[15] == 0x01)
         {
             instructionPatternsFound++;
             memorySlice.copyBytes(si.gettingSoundHandler, 0, sizeof(si.gettingSoundHandler));
 
-            i += (size_t)16 + isv;
+            i += 17;
             si.beforeFadeOutAllLocation = ph.processMemoryLocation + i;
-            for (size_t n = 0; n < (size_t)16 + isv; n++)
+            for (size_t n = 0; n < 17; n++)
             {
                 ph.getByte(b);
                 memorySlice.addToEnd(b);
@@ -483,7 +479,7 @@ bool injectWaitInstructions(
 
     uint32_t startOffset = sizeof(flashbackWaitInstructions) + 64; // 64 bytes used for std::string object + padding
 
-    memcpy(&flashbackWaitInstructions[6], si.gettingSoundHandler, sizeof(si.gettingSoundHandler) - !(si.isSteamVersion));
+    memcpy(&flashbackWaitInstructions[6], si.gettingSoundHandler, sizeof(si.gettingSoundHandler));
 
     uint32_t firstFlashbackNameLocation = extraMemoryLocation + startOffset;
     memcpy(&flashbackWaitInstructions[24], &firstFlashbackNameLocation, sizeof(uint32_t));
@@ -660,14 +656,16 @@ DWORD codeInjectionMain(const bool skipFlashbacks)
 
         SavedInstructions si;
 
-        DWORD amnesiaPid = findAmnesiaPid(si);
+        bool isSteamVersion = false;
+
+        DWORD amnesiaPid = findAmnesiaPid(si, isSteamVersion);
 
         if (amnesiaPid == (DWORD)-1)
         {
             return (DWORD)-1;
         }
 
-        ProcessHelper ph(amnesiaPid, (si.isSteamVersion ? steamName : nosteamName));
+        ProcessHelper ph(amnesiaPid, (isSteamVersion ? steamName : nosteamName));
 
         amnesiaHandle = ph.processHandle;
 
