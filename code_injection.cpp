@@ -434,7 +434,7 @@ bool injectWaitInstructions(
         0x51,                                     // 0004 // push ecx // dummy push // stack depth +20
         0x51,                                     // 0005 // push ecx // dummy push // stack depth +24
 
-        // the last byte is a nop instruction because the NoSteam version only uses 13 bytes to get the cSoundHandler object
+        // there's a nop at the end because the NoSteam version used to only use 13 bytes to get the cSoundHandler object
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x90, // 0006 // getting cSoundHandler object
 
         0x8b, 0xc8,                               // 0020 // mov ecx, eax // moving cSoundHandler object to ecx
