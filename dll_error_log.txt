@@ -1,1 +1,3 @@
-default text
+This file isn't written to until the first time NtCreateFile is called after injection, so make sure the time below seems right.
+2023-08-01 12:00:00
+no errors detected
