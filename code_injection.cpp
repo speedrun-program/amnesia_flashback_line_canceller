@@ -186,9 +186,10 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
             instructionPatternsFound++;
             memorySlice.copyBytes(si.gettingSoundHandler, 0, sizeof(si.gettingSoundHandler));
 
-            i += 17;
+            size_t distanceToBeforeFadeOutAllBytes = 17;
+            i += distanceToBeforeFadeOutAllBytes;
             si.beforeFadeOutAllLocation = ph.processMemoryLocation + i;
-            for (size_t n = 0; n < 17; n++)
+            for (size_t n = 0; n < distanceToBeforeFadeOutAllBytes; n++)
             {
                 ph.getByte(b);
                 memorySlice.addToEnd(b);
@@ -459,7 +460,7 @@ bool injectWaitInstructions(
         0xff, 0x15, 0x00, 0x00, 0x00, 0x00,       // 0085 // call Sleep // stack depth +28
         0xbb, 0x00, 0x00, 0x00, 0x00,             // 0091 // mov ebx, start of first flashback name
         0x31, 0xf6,                               // 0096 // xor esi, esi
-        0x74, 0xbc,                               // 0098 // jz -68
+        0xeb, 0xbc,                               // 0098 // jmp -68
         // end of loop
 
         0x83, 0xc4, 0x0c,                         // 0100 // add esp, 12 // stack depth +16
