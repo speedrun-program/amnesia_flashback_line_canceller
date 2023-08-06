@@ -286,7 +286,7 @@ bool setFlashbackNames(unsigned char* forExtraMemory, FileHelper<char>& fh, cons
                 return false;
             }
 
-            forExtraMemory[writeOffset + nameSize] = (unsigned int)ch;
+            forExtraMemory[writeOffset + nameSize] = (unsigned char)ch;
             nameSize++;
         }
     }
