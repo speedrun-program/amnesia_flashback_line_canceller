@@ -18,12 +18,13 @@ public:
     {
 #ifndef _WIN32
         throw std::runtime_error("FileHelper wchar_t* constructor only works on Windows");
-#endif
+#else
         if (_wfopen_s(&_f, filename, L"rb") != 0 || !_f)
         {
             printf("FileHelper couldn't open %ls\n", filename);
             throw std::runtime_error("FileHelper fopen failure in const wchar_t* constructor");
         }
+#endif
     }
 
     explicit FileHelper(const char* filename)
