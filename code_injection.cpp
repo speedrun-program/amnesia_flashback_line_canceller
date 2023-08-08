@@ -136,7 +136,7 @@ bool findInstructions(SavedInstructions& si, ProcessHelper& ph)
     unsigned char b = 0;
     CircularBuffer<16> memorySlice; // give this at least the size of the longest byte pattern
 
-    size_t instructionPatternsFound = 0; // if this ends up being greater than 5, there were duplicate injection location patterns
+    size_t instructionPatternsFound = 0; // if this reaches 5 before all patterns were found, there were duplicate patterns
 
 
     for (size_t i = 1; i < sizeof(memorySlice.buffer); i++) // filling memorySlice with initial bytes and making sure ph.getByte works
