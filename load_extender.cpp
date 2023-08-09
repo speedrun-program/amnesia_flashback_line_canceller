@@ -142,6 +142,8 @@ void __stdcall NativeInjectionEntryPoint(REMOTE_ENTRY_INFO* inRemoteInfo)
 
 static void sharedPathCheckingFunction(const char* path)
 {
+    static MapAndMutex mapAndMutexObject;
+    
     int filenameIndex = -1;
     int pathEndIndex = 0;
 
