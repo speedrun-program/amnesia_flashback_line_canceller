@@ -37,14 +37,14 @@ using uPtrType = std::unique_ptr<wcharOrChar[]>;
 using vectorType = std::vector<wcharOrChar>;
 
 #ifdef _WIN32
-wcharOrChar toolPath[300]{};
-size_t toolPathLength = 0;
-wcharOrChar delaysFileName[] = L"files_and_delays.txt";
-wcharOrChar logFileName[] = L"dll_error_log.txt";
-bool pathSuccessfullySent = false;
+static wcharOrChar toolPath[300]{};
+static size_t toolPathLength = 0;
+static wcharOrChar delaysFileName[] = L"files_and_delays.txt";
+static wcharOrChar logFileName[] = L"dll_error_log.txt";
+static bool pathSuccessfullySent = false;
 #else
-wcharOrChar delaysFileName[] = "files_and_delays.txt";
-wcharOrChar logFileName[] = "so_error_log.txt";
+static wcharOrChar delaysFileName[] = "files_and_delays.txt";
+static wcharOrChar logFileName[] = "so_error_log.txt";
 #endif
 
 // using multiple cpp files made exe bigger, so definitions are in this header
