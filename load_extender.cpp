@@ -42,13 +42,16 @@ static size_t toolPathLength = 0;
 static wcharOrChar delaysFileName[] = L"files_and_delays.txt";
 static wcharOrChar logFileName[] = L"dll_error_log.txt";
 static bool pathSuccessfullySent = false;
+
+#include "shared.h"
 #else
 static wcharOrChar delaysFileName[] = "files_and_delays.txt";
 static wcharOrChar logFileName[] = "so_error_log.txt";
-#endif
 
-// using multiple cpp files made exe bigger, so definitions are in this header
 #include "shared.h"
+
+static MapAndMutex mapAndMutexObject;
+#endif
 
 #ifdef _WIN32
 static NTSTATUS WINAPI NtCreateFileHook(
@@ -142,8 +145,6 @@ void __stdcall NativeInjectionEntryPoint(REMOTE_ENTRY_INFO* inRemoteInfo)
 
 static void sharedPathCheckingFunction(const char* path)
 {
-    static MapAndMutex mapAndMutexObject;
-    
     int filenameIndex = -1;
     int pathEndIndex = 0;
 
