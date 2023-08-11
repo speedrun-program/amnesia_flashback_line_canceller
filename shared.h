@@ -136,7 +136,7 @@ make sure files_and_delays.txt is saved as UTF-16 LE"
 
         if (_wfopen_s(&errorLogFile, toolPath, L"w") != 0 || !errorLogFile)
 #else
-        if (!(errorLogFile = fopen(toolPath, "w")))
+        if (!(errorLogFile = fopen(logFileName, "w")))
 #endif
         {
             return;
