@@ -47,8 +47,11 @@ how to add more flashbacks:
 files_and_delays.txt syntax:
 
 On each line in files_and_delays.txt, write file name and delay sequence separated by a forward slash.
+
 Delay time is in milliseconds.
+
 Write a dash character (this character: -) as the last part of the delay sequence if you want it to restart.
+
 If a dash character is written as the first part of the sequence, the file will restart every delay sequence
 when it's loaded.
 
@@ -59,5 +62,7 @@ EXAMPLE:
     game_map3.hps / -
 
 game_map1.hps will be delayed 1 second on its 1st load and 2.5 seconds on its 2nd load.
+
 game_map2.hps will be delay 2 seconds, 3 seconds, and 4 seconds in a cycle.
+
 game_map3.hps will restart the other maps' sequences whenever it's loaded.
