@@ -1,0 +1,13 @@
+00_rainy_hall/         1000 (the numbers represent map load delay times in milliseconds)
+/                      1000 (this one is the delay time for the main menu)
+02_entrance_hall/      1000
+06_distillery/         1000
+10_daniels_room/       1000
+12_storage/            1000
+13_machine_room/       1000
+15_prison_south/       1000
+15_prison_north/       1000
+16_cistern_entrance/   2000
+19_morgue/             1000
+23_torture_transept/   1000
+29_orb_chamber/        1000
