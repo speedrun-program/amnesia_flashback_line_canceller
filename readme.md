@@ -1,3 +1,4 @@
+2024-01-05: released for Amnesia 1.5
 
 https://github.com/speedrun-program/amnesia_load_screen_tool
 
