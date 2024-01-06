@@ -7,7 +7,9 @@ https://github.com/speedrun-program/amnesia_load_screen_tool
 how to make the game skip flashbacks in load screens:
 ---------------------------------------------------------------------------------------------------
 - **CHECK IF THE MODERATORS ALLOW THIS.**
+- 
   when this was written, the mods said they wouldn't let people use this feature.
+  
   check if they allow this. If they don't, but you want to use it, tell them you think they should allow it.
 
 - in amnesia_settings.txt, set "skip flashbacks" to "y".
@@ -41,9 +43,11 @@ how to adjust load delays or add or remove maps in maps_and_delays.txt:
 - if there's no text before the forward slash, the delay is used for the main menu
 
 - example 1: "12_storage/ 1575"
+  
   this will give the loads from main menu for the Storage map a delay of 1575 milliseconds.
   
   example 2: "/ 1000"
+  
   this will give loads for the main menu when exiting the game a delay of 1000 milliseconds.
 
 
@@ -55,7 +59,9 @@ how to add more flashbacks:
 - the sound files used by each flashback in are listed in the .flash files in \Amnesia The Dark Descent\flashbacks.
 
 - in English, the sound files are in \Amnesia The Dark Descent\lang\eng\voices\flashbacks.
+  
   in Russian, the sound files are in \Amnesia The Dark Descent\lang\rus\voices\flashbacks.
+  
   you can listen to them to check if they're the ones you want to skip.
 
 
