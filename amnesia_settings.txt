@@ -2,4 +2,6 @@
 skip flashbacks: n
 delay maps: y
 allow unexpected game versions: n
+check for tool updates: y
+allow not fully updated tool: n
 milliseconds remaining before unwait: 450
