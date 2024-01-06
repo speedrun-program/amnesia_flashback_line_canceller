@@ -1,238 +1,253 @@
 
-#include <cstdio>
-#include <memory>
-#include <stdexcept>
+#include <stdio.h>
+#include <stdint.h>
+
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <psapi.h>
 
-class ProcessHelper
-{
+class ProcessHelper {
 public:
-    const wchar_t* processName = nullptr;
-    std::unique_ptr<unsigned char[]> buffer;
     HANDLE processHandle = nullptr;
-    uint32_t memoryOffset = 0;
-    uint32_t bytesLeft = 0;
-    uint32_t processMemoryLocation = (uint32_t)-1;
-    DWORD pageSize = 0;
+    uint32_t whereToReadOrWrite = 0;
+    uint32_t remainingBytesToRead = 0;
+    uint32_t textSegmentLocation = 0;
     DWORD bufferPosition = 0;
+    unsigned char buffer[4096] = {};
 
     ProcessHelper(const ProcessHelper& fhelper) = delete;
     ProcessHelper& operator=(ProcessHelper other) = delete;
     ProcessHelper(ProcessHelper&&) = delete;
     ProcessHelper& operator=(ProcessHelper&&) = delete;
 
-    ProcessHelper(const DWORD pid, const wchar_t* processNameCString)
-    {
+
+    ProcessHelper(const DWORD pid, const wchar_t* processName) {
         processHandle = OpenProcess(
-            PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_SUSPEND_RESUME,
+            PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_SUSPEND_RESUME | PROCESS_TERMINATE,
             false,
             pid
         );
 
-        if (processHandle == nullptr)
-        {
+        if (processHandle == nullptr) {
             printf("ProcessHelper couldn't get process handle for %ls with PID %u:\n", processName, pid);
-            throw std::runtime_error("ProcessHelper OpenProcess failure in constructor");
+            return;
         }
 
-        processName = processNameCString;
-        SYSTEM_INFO sysInfo;
-        GetSystemInfo(&sysInfo);
-        pageSize = sysInfo.dwPageSize;
-
-        if (!checkIfProcessIsCorrect())
-        {
-            throw std::runtime_error("OpenProcess opened an unexpected process");
+        if (!checkIfProcessIsCorrect(processName)) {
+            return;
         }
 
-        buffer = std::make_unique<unsigned char[]>(pageSize);
-        bufferPosition = pageSize; // this initial value lets the first read happen on the first call to getByte
+        if (!findTextSegmentLocation(processName)) {
+            return;
+        }
     }
 
-    ~ProcessHelper()
-    {
-        if (processHandle != nullptr)
-        {
+
+    ~ProcessHelper() {
+        if (processHandle != nullptr) {
             CloseHandle(processHandle);
         }
     }
 
-    bool checkIfProcessIsCorrect() const
-    {
-        DWORD filepathBufferSize = 512;
-        std::unique_ptr<wchar_t[]> filepathBuffer;
 
-        DWORD queryFullProcessImageNameResult = 0;
-        if (processHandle != nullptr) // this check gets rid of warning C6387
-        {
-            while (queryFullProcessImageNameResult == 0)
-            {
-                filepathBuffer = std::make_unique<wchar_t[]>(filepathBufferSize);
-                DWORD charactersWritten = filepathBufferSize - 1; // decremented for null character
+    bool checkIfProcessIsCorrect(const wchar_t* processName) const {
+        wchar_t filepathBuffer[320] = {};
 
-                queryFullProcessImageNameResult = QueryFullProcessImageName(processHandle, 0, filepathBuffer.get(), &charactersWritten);
-                if (queryFullProcessImageNameResult == 0)
-                {
-                    DWORD errorNumber = GetLastError();
-                    if (errorNumber == 122) // buffer too small error
-                    {
-                        filepathBufferSize *= 2;
-                    }
-                    else
-                    {
-                        printf("error when using GetModuleBaseName: %d\n", GetLastError());
-                        return false;
-                    }
-                }
+        DWORD charactersWritten = (sizeof(filepathBuffer) / sizeof(wchar_t)) - 1; // - 1 so there's always a L'\0' at the end
+        DWORD queryFullProcessImageNameResult = QueryFullProcessImageName(
+            processHandle,
+            PROCESS_NAME_NATIVE,
+            filepathBuffer,
+            &charactersWritten
+        );
 
-                if (filepathBufferSize >= 32767) // this should never happen
-                {
-                    printf("ERROR: file path size from QueryFullProcessImageName somehow exceeded 32767 characters\n");
-                    return false;
-                }
+        if (queryFullProcessImageNameResult == 0) {
+            DWORD errorNumber = GetLastError();
+            if (errorNumber == 122) {
+                printf("the file path of Amnesia.exe or Amnesia_NoSteam.exe was too long to read: %ls\n", filepathBuffer);
+            } else {
+                printf("error when using QueryFullProcessImageName: %d\n", errorNumber);
             }
+
+            return false;
         }
 
-        wchar_t* filename = wcsrchr(filepathBuffer.get(), L'\\');
-        filename = (filename != nullptr) ? filename + 1 : filepathBuffer.get();
-        if (wcscmp(filename, processName) != 0)
-        {
-            printf("unexpected process name when checking it using GetModuleBaseName: %ls\n", filepathBuffer.get());
+        wchar_t* filename = wcsrchr(filepathBuffer, L'\\');
+        filename = (filename != nullptr) ? filename + 1 : filepathBuffer;
+        if (wcscmp(filename, processName) != 0) {
+            printf("unexpected process name when checking it using QueryFullProcessImageName: %ls\n", filepathBuffer);
             return false;
         }
 
         return true;
     }
 
-    bool findExecutableMemoryLocation()
-    {
-        DWORD filepathBufferSize = 512;
-        std::unique_ptr<wchar_t[]> filepathBuffer = std::make_unique<wchar_t[]>(filepathBufferSize);
+
+    bool findTextSegmentLocation(const wchar_t* processName) {
+        wchar_t filepathBuffer[320] = {};
+        wchar_t filepathBufferCopy[(sizeof(filepathBuffer) / sizeof(wchar_t))] = {};
 
         uint32_t queryAddress = 0;
         MEMORY_BASIC_INFORMATION mbi = {};
-        if (VirtualQueryEx(processHandle, (LPCVOID)queryAddress, &mbi, sizeof(mbi)) == 0) // checking if VirtualQueryEx works
-        {
+        if (VirtualQueryEx(processHandle, (LPCVOID)queryAddress, &mbi, sizeof(mbi)) == 0) { // checking if VirtualQueryEx works
             printf("error when using VirtualQueryEx: %d\n", GetLastError());
             return false;
         }
-        
-        // finding start of process memory
+
+        // finding start of exe memory area
         DWORD charactersWritten = 0;
-        size_t filepathLength = (size_t)-1;
-        do
-        {
-            if (queryAddress != 0) // this check gets rid of warning C6387
-            {
-                bool filePathCopied = false;
-                while (!filePathCopied)
-                {
-                    charactersWritten = GetMappedFileName(
-                        processHandle,
-                        (LPVOID)queryAddress,
-                        filepathBuffer.get(),
-                        filepathBufferSize - 1 // - 1 so there's always a L'\0' at the end
-                    );
-                    if (filepathBufferSize >= 32767) // this should never happen
-                    {
-                        break;
-                    }
-                    else if (filepathBufferSize - 1 == charactersWritten)
-                    {
-                        filepathBufferSize *= 2;
-                        filepathBuffer = std::make_unique<wchar_t[]>(filepathBufferSize);
-                    }
-                    else
-                    {
-                        filePathCopied = true;
-                    }
-                }
+        bool foundExeArea = false;
+        for (queryAddress += mbi.RegionSize; VirtualQueryEx(processHandle, (LPCVOID)queryAddress, &mbi, sizeof(mbi)) != 0; queryAddress += mbi.RegionSize) {
+            DWORD charactersWritten = GetMappedFileName(
+                processHandle,
+                (LPVOID)queryAddress,
+                filepathBuffer,
+                (sizeof(filepathBuffer) / sizeof(wchar_t)) - 1 // - 1 so there's always a L'\0' at the end
+            );
+            if (charactersWritten == 0) {
+                continue;
             }
-            
-            wchar_t* filename = wcsrchr(filepathBuffer.get(), L'\\');
-            filename = (filename != nullptr) ? filename + 1 : filepathBuffer.get();
-            if (wcscmp(filename, processName) == 0)
-            {
-                filepathLength = charactersWritten;
+
+            wchar_t* filename = wcsrchr(filepathBuffer, L'\\');
+            filename = (filename != nullptr) ? filename + 1 : filepathBuffer;
+            if (wcscmp(filename, processName) == 0) {
+                foundExeArea = true;
+                memcpy(filepathBufferCopy, filepathBuffer, sizeof(filepathBuffer));
                 break;
             }
+        }
 
-            queryAddress += mbi.RegionSize;
-        } while (VirtualQueryEx(processHandle, (LPCVOID)queryAddress, &mbi, sizeof(mbi)) != 0);
-
-        if (filepathLength == (size_t)-1)
-        {
-            printf("couldn't find process memory location\n");
+        if (!foundExeArea) {
+            printf("couldn't find exe memory area\n");
             return false;
         }
         
         // finding the .text area
-        std::unique_ptr<wchar_t[]> filepathBufferCopy = std::make_unique<wchar_t[]>(filepathBufferSize);
-        memcpy(filepathBufferCopy.get(), filepathBuffer.get(), filepathBufferSize * sizeof(wchar_t));
-        
-        do
-        {
-            if (mbi.Protect == PAGE_EXECUTE_READ)
-            {
-                processMemoryLocation = queryAddress;
-                bytesLeft = mbi.RegionSize;
-                memoryOffset = queryAddress - pageSize; // this will overflow to 0 on the first call to getByte
+        do {
+            if (mbi.Protect == PAGE_EXECUTE_READ) {
+                remainingBytesToRead = mbi.RegionSize;
+                whereToReadOrWrite = queryAddress;
+                if (!refillBuffer()) {
+                    return false; // first read failed
+                }
+                textSegmentLocation = queryAddress; // do this last to indicate successful initialization
                 return true;
             }
 
-            if (queryAddress != 0) // this check gets rid of warning C6387
-            {
-                charactersWritten = GetMappedFileName(
-                    processHandle,
-                    (LPVOID)queryAddress,
-                    &filepathBuffer[0],
-                    filepathBufferSize
-                );
-            }
+            charactersWritten = GetMappedFileName(
+                processHandle,
+                (LPVOID)queryAddress,
+                filepathBuffer,
+                (sizeof(filepathBuffer) / sizeof(wchar_t)) - 1 // - 1 so there's always a L'\0' at the end
+            );
 
             // no longer looking at exe memory
-            if (charactersWritten != filepathLength || wcscmp(filepathBuffer.get(), filepathBufferCopy.get()) != 0)
-            {
+            if (charactersWritten == 0 || wcscmp(filepathBuffer, filepathBufferCopy) != 0) {
                 break;
             }
 
             queryAddress += mbi.RegionSize;
         } while (VirtualQueryEx(processHandle, (LPCVOID)queryAddress, &mbi, sizeof(mbi)) != 0);
 
-        printf("couldn't find .text area in process memory\n");
+        printf("couldn't find .text memory area in exe memory area\n");
         return false;
     }
 
-    bool getByte(unsigned char& b)
-    {
-        if (bytesLeft == 0)
-        {
+
+    bool refillBuffer() const {
+        uint32_t bytesToRead = (remainingBytesToRead >= sizeof(buffer)) ? sizeof(buffer) : remainingBytesToRead;
+        uint32_t bytesReadSoFar = 0;
+
+        while (bytesReadSoFar < bytesToRead) {
+            SIZE_T bytesReadOnCurrentCall = 0;
+
+            bool readSucceeded = ReadProcessMemory(
+                processHandle,
+                (LPCVOID)whereToReadOrWrite,
+                (LPVOID)(&buffer[bytesReadSoFar]),
+                bytesToRead - bytesReadSoFar,
+                &bytesReadOnCurrentCall
+            );
+            if (bytesReadOnCurrentCall == 0) {
+                printf("ReadProcessMemory couldn't read any bytes starting at memory address: 0x%x\n", whereToReadOrWrite);
+                return false;
+            }
+            if (!readSucceeded) {
+                printf("ReadProcessMemory error %d at memory address: 0x%x\n", GetLastError(), whereToReadOrWrite);
+                return false;
+            }
+
+            bytesReadSoFar += bytesReadOnCurrentCall;
+        }
+
+        return true;
+    }
+
+
+    bool getByte(unsigned char* b) {
+        if (remainingBytesToRead == 0) {
             return false;
         }
 
-        if (bufferPosition == pageSize)
-        {
+        if (bufferPosition == sizeof(buffer)) {
             bufferPosition = 0;
-            memoryOffset += pageSize;
-            bool readSucceeded = ReadProcessMemory(
-                processHandle,
-                (LPCVOID)memoryOffset,
-                (LPVOID)buffer.get(),
-                pageSize,
-                nullptr
-            );
+            whereToReadOrWrite += sizeof(buffer);
 
-            if (!readSucceeded)
-            {
-                printf("ProcessHelper ReadProcessMemory error in getByte: %d\nat memory address: %u\n", GetLastError(), memoryOffset);
+            if (!refillBuffer()) {
                 return false;
             }
         }
 
-        b = buffer[bufferPosition];
-        bufferPosition++;
-        bytesLeft--;
+        *b = buffer[bufferPosition];
+        bufferPosition += 1;
+        remainingBytesToRead -= 1;
+
+        return true;
+    }
+
+
+    uint32_t writeToProcess(const uint32_t whereToWrite, const unsigned char* src, const uint32_t howManyBytesToWrite) const {
+        uint32_t bytesWrittenSoFar = 0;
+
+        while (bytesWrittenSoFar < howManyBytesToWrite) {
+            SIZE_T bytesWrittenOnCurrentCall = 0;
+
+            bool writeSucceeded = WriteProcessMemory(
+                processHandle,
+                (LPVOID)whereToWrite,
+                (LPCVOID)(&src[bytesWrittenSoFar]),
+                howManyBytesToWrite - bytesWrittenSoFar,
+                &bytesWrittenOnCurrentCall
+            );
+            if (bytesWrittenOnCurrentCall == 0) {
+                printf("WriteProcessMemory couldn't write any bytes starting at memory address: 0x%x\n", whereToReadOrWrite);
+                return bytesWrittenSoFar;
+            }
+            if (!bytesWrittenOnCurrentCall) {
+                printf("WriteProcessMemory error %d at memory address: 0x%x\n", GetLastError(), whereToReadOrWrite);
+                return bytesWrittenSoFar;
+            }
+
+            bytesWrittenSoFar += bytesWrittenOnCurrentCall;
+        }
+
+        return bytesWrittenSoFar;
+    }
+
+
+    bool writeByte(const unsigned char b) {
+        if (bufferPosition == sizeof(buffer)) {
+            bufferPosition = 0;
+
+            if (writeToProcess(whereToReadOrWrite, buffer, sizeof(buffer)) != sizeof(buffer)) {
+                return false;
+            }
+
+            whereToReadOrWrite += sizeof(buffer);
+        }
+
+        buffer[bufferPosition] = b;
+        bufferPosition += 1;
 
         return true;
     }

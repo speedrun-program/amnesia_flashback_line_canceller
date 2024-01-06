@@ -1,86 +1,51 @@
 
-#include <cstdio>
-#include <memory>
-#include <stdexcept>
+#include <stdio.h>
 
-const size_t fhelperBufferSize = 8192;
-
-template <typename T>
-class FileHelper
-{
+class FileHelper {
 public:
+    FILE* f = nullptr;
+    size_t bufferPosition = 0;
+    size_t charactersRead = 0;
+    unsigned char buffer[4096] = {};
+
     FileHelper(const FileHelper& fhelper) = delete;
     FileHelper& operator=(FileHelper other) = delete;
     FileHelper(FileHelper&&) = delete;
     FileHelper& operator=(FileHelper&&) = delete;
 
-    explicit FileHelper(const wchar_t* filename) // there isn't wfopen on linux
-    {
-#ifndef _WIN32
-        throw std::runtime_error("FileHelper wchar_t* constructor only works on Windows");
-#else
-        if (_wfopen_s(&_f, filename, L"rb") != 0 || !_f)
-        {
-            printf("FileHelper couldn't open %ls\n", filename);
-            throw std::runtime_error("FileHelper fopen failure in const wchar_t* constructor");
-        }
-#endif
-    }
 
-    explicit FileHelper(const char* filename)
-    {
+    FileHelper(const char* fileName) {
 #ifdef _WIN32
-        if (fopen_s(&_f, filename, "rb") != 0 || !_f)
+        if (fopen_s(&f, fileName, "rb") != 0 || !f) {
 #else
-        if (!(_f = fopen(filename, "rb")))
+        if (!(_f = fopen(fileName, "rb"))) {
 #endif
-        {
-            printf("FileHelper couldn't open %s\n", filename);
-            throw std::runtime_error("FileHelper fopen failure in const char* constructor");
+            printf("FileHelper couldn't open %s\n", fileName);
+            return;
         }
     }
 
-    ~FileHelper()
-    {
-        if (_f)
-        {
-            fclose(_f);
+
+    ~FileHelper() {
+        if (f) {
+            fclose(f);
         }
     }
 
-    bool getCharacter(T& ch)
-    {
-        if (_bufferPosition == _charactersRead)
-        {
-            _bufferPosition = 0;
-            _charactersRead = (int)fread(_buffer.get(), sizeof(T), fhelperBufferSize / sizeof(T), _f);
 
-            if (!_charactersRead)
-            {
+    bool getCharacter(char* ch) {
+        if (bufferPosition == charactersRead) {
+            bufferPosition = 0;
+            charactersRead = fread(buffer, 1, sizeof(buffer), f);
+
+            if (!charactersRead) {
                 return false;
             }
         }
 
-        ch = _buffer[_bufferPosition];
-        _bufferPosition++;
+        *ch = buffer[bufferPosition];
+        bufferPosition += 1;
 
         return true;
     }
-
-    void resetFile()
-    {
-        if (fseek(_f, 0, SEEK_SET) != 0)
-        {
-            throw std::runtime_error("FileHelper fseek failure in resetFile");
-        }
-
-        _bufferPosition = 0;
-        _charactersRead = 0;
-    }
-
-private:
-    FILE* _f = nullptr;
-    std::unique_ptr<T[]> _buffer = std::make_unique<T[]>(fhelperBufferSize / sizeof(T));
-    int _bufferPosition = 0;
-    int _charactersRead = 0;
 };
