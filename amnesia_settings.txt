@@ -1,4 +1,3 @@
-2024-01-05
 skip flashbacks: n
 delay maps: y
 allow unexpected game versions: n
