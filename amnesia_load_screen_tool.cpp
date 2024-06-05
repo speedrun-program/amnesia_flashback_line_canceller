@@ -38,7 +38,7 @@ unsigned char mainMenuDelayInstructions[52] = {
 
 
 unsigned char mapDelayInstructions[124] = {
-    // the commented out instructions are put in Amnesia instead of the extra memory
+    // the commented out instructions are put in Amnesia instead of in the extra memory
 //  0x0f, 0x85, 0x00, 0x00, 0x00, 0x00,          // jnz to loadFromMenuBytes
 //  0x53,                                        // push ebx
 //  0x53,                                        // push esi
